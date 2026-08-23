@@ -1,7 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "eamax"
 version = "0.1.0"
-description = "Add your description here"
+description = "Evidence accumulation models in JAX: simulation and likelihoods for racing diffusion and related models"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = []
+license = { file = "LICENSE" }
+authors = [{ name = "Malte Luken", email = "m.luken@esciencecenter.nl" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+# Core is deliberately tiny. NOTE: tensorflow_probability is a *required runtime peer* for
+# the sampling paths and `eamax.hierarchical`, but is NOT declared here on purpose --
+# `tfp-nightly` and `tensorflow-probability` are separate PyPI distributions that both
+# install the `tensorflow_probability` module, and all three consumer repos are on
+# `tfp-nightly`. Declaring it would install both and they would fight over the import path.
+# See `eamax._tfp` for the lazy import and its error message.
+dependencies = ["jax>=0.9", "numpy"]
+
+[project.optional-dependencies]
+# Only needed for `eamax.flows` (the neural spline-flow density estimator).
+flows = ["distrax", "flax", "orbax-checkpoint", "optax"]
+# Convenience for fresh environments that do not already have tfp-nightly installed.
+tfp = ["tensorflow-probability"]
+# `eamax.inference` (NUTS + tempered SMC). Every API this uses -- `extend_params`,
+# `adaptive_tempered_smc`, `smc.resampling.systematic`, `SMCInfo.log_likelihood_increment`
+# -- is unchanged across 1.2.5 (the oldest pin among the consumer repos) and 1.6.2 (the
+# newest), so the floor is 1.2.5. The one exception is `blackjax.diagnostics.rhat`, which
+# arrived later; `eamax.inference.diagnostics.rhat` raises with an upgrade hint below ~1.6
+# rather than silently falling back to the older plain Gelman-Rubin statistic.
+# NOTE: `eamax.inference` also needs the TFP peer, via `eamax.hierarchical`.
+inference = ["blackjax>=1.2.5"]
+# `eamax.io` only -- reading and writing NetCDF posterior artifacts. Kept out of
+# `inference` because sampling and diagnostics need none of it: `arviz-stats` is
+# deliberately absent, since `eamax.inference.diagnostics.rhat` reproduces
+# `arviz_stats.rhat` to six decimals from blackjax alone. blackjax is listed because
+# `load_dataset_posterior` filters on that R-hat, so the loader needs it even though
+# neither writer does.
+io = ["arviz-base", "xarray", "h5netcdf", "h5py", "blackjax>=1.6"]
+
+[dependency-groups]
+dev = ["pytest", "scipy", "pandas", "blackjax>=1.6", "arviz-base", "arviz-stats", "xarray", "h5netcdf", "h5py"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eamax"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
