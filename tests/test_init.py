@@ -10,8 +10,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from eamax.design import ParamSpecBuilder
-from eamax.design.legacy import intercept_slope_spec
+from eamax._tfp import tfb
+from eamax.design import coef, intercept, rdm_intercept_slope_spec, parameterization, quantity, term
 from eamax.hierarchical import HierarchicalLKJMVNPrior
 from eamax.inference.init import (
     T0Support,
@@ -32,16 +32,23 @@ NUM_CENTERED = 2
 
 def _t0_first_spec():
     """A spec whose `t0` is at index 0, which no source repository can express."""
-    builder = ParamSpecBuilder()
-    builder.add("t0", "t0")
-    builder.add_quantity("V")
-    builder.add_quantity("B")
-    return builder.finalize(num_responses=2)
+    t0 = coef("t0", tfb().Exp())
+    v = coef("V", tfb().Exp())
+    b = coef("B", tfb().Exp())
+    return parameterization(
+        order=[t0, v, b],
+        quantities=[
+            quantity("v", term(v, intercept())),
+            quantity("b", term(b, intercept())),
+            quantity("t0", term(t0, intercept())),
+        ],
+        num_responses=2,
+    )
 
 
 @pytest.fixture
 def spec():
-    return intercept_slope_spec()
+    return rdm_intercept_slope_spec()
 
 
 @pytest.fixture
@@ -91,20 +98,24 @@ def test_it_finds_t0_by_name(spec):
 
 
 def test_a_spec_without_t0_is_an_error():
-    builder = ParamSpecBuilder()
-    builder.add_quantity("V")
+    v = coef("V", tfb().Exp())
+    spec = parameterization(
+        order=[v], quantities=[quantity("v", term(v, intercept()))], num_responses=2
+    )
 
     with pytest.raises(ValueError, match="needs a parameter named 't0'"):
-        T0Support.from_spec(builder.finalize(num_responses=2), 0.5)
+        T0Support.from_spec(spec, 0.5)
 
 
 def test_a_t0_on_the_wrong_link_is_an_error():
     """The cap compares an unconstrained value, so it is only `log(t0)` under the log link."""
-    builder = ParamSpecBuilder(identity_qtypes={"t0"})
-    builder.add("t0", "t0")
+    t0 = coef("t0", tfb().Identity())
+    spec = parameterization(
+        order=[t0], quantities=[quantity("t0", term(t0, intercept()))], num_responses=2
+    )
 
-    with pytest.raises(ValueError, match="must be on the 'log' link"):
-        T0Support.from_spec(builder.finalize(num_responses=2), 0.5)
+    with pytest.raises(ValueError, match="must be on the log"):
+        T0Support.from_spec(spec, 0.5)
 
 
 def test_the_constraint_fires_when_t0_is_not_last():

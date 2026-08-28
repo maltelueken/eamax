@@ -79,7 +79,7 @@ def reconstruct_semicentered(mu, s, psi_raw, z, theta_bt):
     -------
     array
         Per-subject parameters on the unconstrained scale, shape ``(S, P)`` -- the input
-        :meth:`eamax.design.ParamSpec.constrain` expects, one row per subject.
+        :meth:`eamax.design.Parameterization.constrain` expects, one row per subject.
     """
     z = jnp.asarray(z)
     num_ncp = z.shape[-1]
@@ -230,7 +230,7 @@ class HierarchicalLKJMVNPrior:
 
     @classmethod
     def from_spec(cls, num_subjects, spec, **kwargs):
-        """Build from a :class:`eamax.design.ParamSpec`.
+        """Build from a :class:`eamax.design.Parameterization`.
 
         Takes the spec's hyperparameter arrays and its centered block.
 
@@ -238,7 +238,7 @@ class HierarchicalLKJMVNPrior:
         ----------
         num_subjects : int
             S.
-        spec : ParamSpec
+        spec : Parameterization
             Supplies ``num_params``, ``num_centered`` and the hyperparameter arrays.
         **kwargs
             Forwarded to the constructor.

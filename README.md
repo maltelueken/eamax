@@ -107,8 +107,8 @@ cannot recover. Rejection rather than clipping, because a clip is a point mass: 
 cap, 55% of draws were capped and the worst subject had 93% of its particles pinned to one
 value — dispersion destroyed in the one coordinate the constraint exists to protect.
 
-`T0Support.from_spec` locates `t0` by name via `ParamSpec` and raises if it is absent or not
-on the log link, rather than assuming it is the last entry.
+`T0Support.from_spec` locates `t0` by name via `Parameterization` and raises if it is absent
+or not on the log link, rather than assuming it is the last entry.
 
 ### The one supported path
 
@@ -176,18 +176,39 @@ N-independent, and matches EMC2, which floors each trial at the same `log(1e-10)
 parameterization) but no prior. Priors are where the three consumers genuinely disagree
 scientifically; there is no shared implementation underneath to extract.
 
-## Both parameter naming conventions
+## One engine, every parameterization
 
-The two-accumulator repositories name their RDM parameters
-`[v_intercept, v_slope, s_true, b, t0]`; the conflict-task work uses signed average and
-difference terms (`V ± v_d/2`, `B ± b_d/2`, `S ± s_d/2`) over N accumulators. These are the
-same map for drift and threshold — `V = v_intercept + v_slope/2`, `v_d = v_slope` — so both
-are `ParamSpec`s over one engine and nothing downstream renames.
+A parameterization is a set of quantities, each a sum of terms, each term a coefficient times
+a **contrast** column built from the accumulator index and the trial covariates:
 
-They are **not** the same for the noise, and that is a modelling difference rather than a
-naming one: one pins the mismatching accumulator's noise to 1, the other pins the *average*
-to 1 and leaves the mismatching accumulator at `1 - s_d/2`. `ParamSpec.noise_reference`
-makes the choice explicit.
+```python
+from eamax._tfp import tfb
+from eamax.design import coef, term, quantity, parameterization, intercept, match, distractor
+
+V, v_d = coef("V", tfb().Exp()), coef("v_d", tfb().Identity())
+parameterization(
+    order=[V, v_d, ...],
+    quantities=[
+        quantity("v", term(V, intercept()), term(v_d, match(0.5))),  # average ± difference/2
+        quantity("amp", term(amp, distractor())),                    # pulse on the distractor
+        ...],
+    num_responses=2)
+```
+
+Each coefficient carries a TensorFlow Probability bijector as its link, so `constrain` and
+`log_det_jacobian` compose over them and `eamax` owns the change of variables but no prior.
+The two-accumulator repositories' `[v_intercept, v_slope, s_true, b, t0]` and the conflict
+work's signed average/difference terms over N accumulators are both just presets over this one
+engine (`intercept_slope_spec`, `sat_spec`, `lba_intercept_slope_spec`, `effects_spec`),
+emitting the exact names each consumer already depends on — nothing downstream renames.
+
+The two noise identifications, which the source repositories treated as a modelling fork, are
+now just two ways to build the `s` quantity: the "average" convention is
+`S·intercept + s_d·match(0.5)`; the "mismatch" convention (what `s_true` means) is
+`constant(scale)·nontarget() + s_true·target()`. Both are linear — there is no
+`noise_reference` flag. And because a quantity is an open-ended sum of contrasts, models the
+old engine could not express — a conflict pulse routed to one accumulator via `distractor`,
+an arbitrary condition contrast matrix — are ordinary specs (`pulsed_conflict_spec`).
 
 ## Validation
 

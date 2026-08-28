@@ -141,9 +141,9 @@ def test_a_hierarchical_likelihood_is_just_the_race_vmapped_over_subjects():
     # source repositories maintained four near-identical hierarchical likelihood functions.
     from eamax import race_loglik
     from eamax.accumulators import Wald
-    from eamax.design import TrialDesign, build_params_fn, intercept_slope_spec
+    from eamax.design import TrialDesign, build_params_fn, rdm_intercept_slope_spec
 
-    spec = intercept_slope_spec()
+    spec = rdm_intercept_slope_spec()
     params_fn = build_params_fn(spec, Wald())
     num_subjects, num_trials = 4, 30
     rng = np.random.default_rng(0)

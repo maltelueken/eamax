@@ -97,16 +97,16 @@ class T0Support:
 
     @classmethod
     def from_spec(cls, spec, min_rt, *, max_fraction=DEFAULT_MAX_T0_FRACTION):
-        """Build from a :class:`eamax.design.ParamSpec` and the fastest observed RT.
+        """Build from a :class:`eamax.design.Parameterization` and the fastest observed RT.
 
         All four source routines locate ``t0`` as *the last entry*, positionally and
         unenforced -- a comment in one of them says so outright. A spec knows the name, so
-        this asks it, the same way :mod:`eamax.design.map` already does. The lookup costs
+        this asks it, the same way :mod:`eamax.design.engine` already does. The lookup costs
         nothing and turns "silently clipped the wrong parameter" into an exception.
 
         Parameters
         ----------
-        spec : ParamSpec
+        spec : Parameterization
             Supplies ``t0``'s index and confirms its link.
         min_rt : float or array
             Fastest valid response time; scalar, or shape ``(S,)`` per subject. See
@@ -133,7 +133,7 @@ class T0Support:
         index = spec.index("t0")
         if spec.links[index] != "log":
             raise ValueError(
-                f"t0 must be on the 'log' link for this constraint, but it is on "
+                f"t0 must be on the log ('Exp') link for this constraint, but it is on "
                 f"'{spec.links[index]}'. The cap compares against an unconstrained value, "
                 "which is only log(t0) under the log link."
             )
@@ -392,7 +392,7 @@ def init_position_from_values(values, *, spec=None, t0_index=None, offset=0, min
     values : sequence of float
         Natural-scale starting values, the full vector including any leading bounded block.
         See :meth:`eamax.inference.transforms.BlockTransform.midpoint` for that block.
-    spec : ParamSpec, optional
+    spec : Parameterization, optional
         Supplies ``t0``'s index, offset by ``offset``.
     t0_index : int, optional
         Given directly instead of via ``spec``.

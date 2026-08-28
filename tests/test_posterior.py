@@ -240,10 +240,10 @@ def test_back_transform_then_select_propagates_the_name_check():
 
 
 def test_back_transform_then_select_accepts_a_param_spec_constrain():
-    """The other transform a consumer might pass: `ParamSpec.constrain`."""
-    from eamax.design.spec import ParamSpec
+    """The other transform a consumer might pass: `Parameterization.constrain`."""
+    from eamax.design import Parameterization
 
-    spec = ParamSpec(names=("v", "b", "t0"), links=("log", "log", "log"))
+    spec = Parameterization.of_names(("v", "b", "t0"), ("log", "log", "log"))
     rng = np.random.default_rng(2)
     samples = rng.normal(size=(2, 4, 3))
 

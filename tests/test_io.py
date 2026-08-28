@@ -18,7 +18,7 @@ pytest.importorskip("h5netcdf")
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 
-from eamax.design.spec import ParamSpec  # noqa: E402
+from eamax.design import Parameterization  # noqa: E402
 from eamax.inference.diagnostics import rhat  # noqa: E402
 from eamax.inference.posterior import pool_chains, thin  # noqa: E402
 from eamax.hierarchical import HierarchicalLKJMVNPrior  # noqa: E402
@@ -205,7 +205,7 @@ def test_load_rejects_an_unstored_parameter(tmp_path):
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def spec():
-    return ParamSpec(names=("v", "b", "t0"), links=("log", "log", "log"))
+    return Parameterization.of_names(("v", "b", "t0"), ("log", "log", "log"))
 
 
 @pytest.fixture
@@ -288,7 +288,7 @@ def test_sigma_is_stored_on_the_log_scale(tmp_path, flat_space, spec):
 def test_identity_linked_parameters_are_not_exponentiated(tmp_path, flat_space):
     import xarray as xr
 
-    signed = ParamSpec(names=("v", "b", "shift"), links=("log", "log", "identity"))
+    signed = Parameterization.of_names(("v", "b", "shift"), ("log", "log", "identity"))
     result = _result(flat_space)
     path = tmp_path / "signed.nc"
     save_hierarchical_posterior(path, result, flat_space, signed, list(range(NUM_SUBJECTS)))
@@ -375,7 +375,7 @@ def test_prior_particles_are_reconstructed_onto_the_posterior_scale(tmp_path, fl
 
 
 def test_a_spec_of_the_wrong_width_is_rejected(tmp_path, flat_space):
-    wrong = ParamSpec(names=("v", "b"), links=("log", "log"))
+    wrong = Parameterization.of_names(("v", "b"), ("log", "log"))
 
     with pytest.raises(ValueError, match="reconstructs"):
         save_hierarchical_posterior(

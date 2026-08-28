@@ -19,8 +19,12 @@ import pytest
 
 from eamax import race_loglik, simulate_race
 from eamax.accumulators import LBA, Wald
-from eamax.design import TrialDesign, build_params_fn, intercept_slope_spec
-from eamax.design.legacy import lba_intercept_slope_spec
+from eamax.design import (
+    TrialDesign,
+    build_params_fn,
+    rdm_intercept_slope_spec,
+    lba_intercept_slope_spec,
+)
 
 
 def _score_statistic(spec, accumulator, theta_true, num_datasets=64, num_trials=400, seed=0):
@@ -56,7 +60,7 @@ def _score_statistic(spec, accumulator, theta_true, num_datasets=64, num_trials=
 
 
 def test_wald_race_score_vanishes_at_the_true_parameters():
-    spec = intercept_slope_spec()
+    spec = rdm_intercept_slope_spec()
     theta = jnp.log(jnp.array([1.0, 1.5, 1.2, 1.2, 0.3]))
     mean, stderr = _score_statistic(spec, Wald(), theta)
     # Every component within 3.5 standard errors of zero. A parameterization mismatch
@@ -75,7 +79,7 @@ def test_a_deliberately_mismatched_parameterization_is_detected():
     # Guards the guard: if the score test cannot see a wrong parameterization, it is not
     # doing its job. Scoring data simulated at one drift with the likelihood evaluated at
     # another must produce a score far from zero.
-    spec = intercept_slope_spec()
+    spec = rdm_intercept_slope_spec()
     truth = jnp.log(jnp.array([1.0, 1.5, 1.2, 1.2, 0.3]))
     wrong = truth.at[0].set(jnp.log(1.6))
 
@@ -105,7 +109,7 @@ def test_a_deliberately_mismatched_parameterization_is_detected():
 
 
 def test_simulated_response_times_all_exceed_the_non_decision_time():
-    spec = intercept_slope_spec()
+    spec = rdm_intercept_slope_spec()
     params_fn = build_params_fn(spec, Wald())
     design = TrialDesign(
         rt=jnp.zeros((5000,)),

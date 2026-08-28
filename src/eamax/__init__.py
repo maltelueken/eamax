@@ -26,7 +26,7 @@ one module not imported here: it needs xarray and ArviZ, which nothing else does
 from . import accumulators, batching, design, hierarchical, inference, numerics, race, simulate
 from .accumulators import Wald, inv_gauss_logpdf, inv_gauss_logsf
 from .numerics import MIN_P, MIN_RT, finalize_trial_logp, guard_positive, log_floor
-from .design import ParamSpec, ParamSpecBuilder, TrialDesign, build_params_fn
+from .design import Parameterization, TrialDesign, build_params_fn, parameterization
 from .simulate import race_sample, simulate_dataset, simulate_race
 from .race import (
     censored_eval_rt,
@@ -43,8 +43,7 @@ __all__ = [
     "MIN_P",
     "MIN_RT",
     "Wald",
-    "ParamSpec",
-    "ParamSpecBuilder",
+    "Parameterization",
     "TrialDesign",
     "accumulators",
     "batching",
@@ -62,6 +61,7 @@ __all__ = [
     "log_floor",
     "numerics",
     "overlay_by_mask",
+    "parameterization",
     "race",
     "race_from_arrays",
     "race_sample",

@@ -180,7 +180,7 @@ def load_dataset_posterior(path, *, to_constrained, param_names):
         Unconstrained -> natural scale, applied to the full parameter vector. The inverse
         of whatever transform the fit used -- e.g.
         :meth:`eamax.inference.transforms.BlockTransform.forward` or
-        :meth:`eamax.design.spec.ParamSpec.constrain`.
+        :meth:`eamax.design.Parameterization.constrain`.
     param_names : sequence of str
         Parameters to keep, by name and in result order.
 
@@ -210,9 +210,16 @@ def load_dataset_posterior(path, *, to_constrained, param_names):
 # ---------------------------------------------------------------------------
 
 
-def _report_scale(values, exp_mask):
-    """Exponentiate the log-linked entries of a trailing-axis parameter block."""
-    return np.where(np.asarray(exp_mask), np.exp(np.asarray(values)), np.asarray(values))
+def _report_natural(spec, values):
+    """Map a trailing-axis parameter block to the natural scale, entry by entry on its link.
+
+    The last axis is the parameter axis, so each coefficient's bijector forward transform is
+    applied through :meth:`eamax.design.Parameterization.to_natural`: a log-linked entry is
+    exponentiated, an identity-linked one is left signed, and any other link (a softplus, a
+    shifted scale) is mapped through its own forward -- so reporting stays correct whatever a
+    parameterization puts on a coefficient, not only ``Exp``/``Identity``.
+    """
+    return np.asarray(spec.to_natural(np.asarray(values)))
 
 
 def _reconstruct_particles(flat_space, particles):
@@ -250,8 +257,9 @@ def save_hierarchical_posterior(
     reconstruction is the same semi-centered formula the sampler uses, reached through the
     one object rather than written out again here.
 
-    ``mu`` and the per-subject parameters are reported on the natural scale: log-linked
-    entries are exponentiated, identity-linked ones are left signed. ``sigma`` is **not**
+    ``mu`` and the per-subject parameters are reported on the natural scale, each entry mapped
+    through its coefficient's link (log-linked entries are exponentiated, identity-linked ones
+    left signed, any other bijector applied by its own forward). ``sigma`` is **not**
     transformed, and deliberately so -- it is a standard deviation *on the log scale*, and
     exponentiating it would produce a number that is not a standard deviation of anything.
 
@@ -269,8 +277,9 @@ def save_hierarchical_posterior(
         Every field carries a leading chain axis.
     flat_space : eamax.hierarchical.HierarchicalFlatSpace
         The coordinate system the particles live in.
-    spec : eamax.design.spec.ParamSpec
-        Supplies ``names`` and ``exp_mask``; its parameter order must match the prior's.
+    spec : eamax.design.Parameterization
+        Supplies ``names`` and the per-coefficient links (via ``to_natural``); its parameter
+        order must match the prior's.
     subjects : sequence
         Subject labels, one per row of the reconstructed ``(S, P)`` block. Used as the
         ``subject`` coordinate, so the stored posterior can be joined back to the source
@@ -301,7 +310,6 @@ def save_hierarchical_posterior(
     azb = _azb()
 
     param_names = [str(name) for name in spec.names]
-    exp_mask = np.asarray(spec.exp_mask)
     subject_coord = np.asarray(subjects)
 
     pop_mu, pop_s, pop_theta = _reconstruct_particles(flat_space, result.particles)
@@ -317,11 +325,11 @@ def save_hierarchical_posterior(
         msg = f"{subject_coord.shape[0]} subject labels for {num_subjects} subjects."
         raise ValueError(msg)
 
-    reported = _report_scale(pop_theta, exp_mask)
+    reported = _report_natural(spec, pop_theta)
 
     posterior_ds = azb.dict_to_dataset(
         {
-            "mu": _report_scale(pop_mu, exp_mask),
+            "mu": _report_natural(spec, pop_mu),
             "sigma": pop_s,
             **{name: reported[..., i] for i, name in enumerate(param_names)},
         },
@@ -352,11 +360,11 @@ def save_hierarchical_posterior(
 
     if prior_particles is not None:
         prior_mu, prior_s, prior_theta = _reconstruct_particles(flat_space, prior_particles)
-        prior_reported = _report_scale(prior_theta, exp_mask)
+        prior_reported = _report_natural(spec, prior_theta)
         leading = ["chain", "draw"] if prior_mu.ndim == 3 else ["draw"]
         groups["prior"] = xr.Dataset(
             {
-                "mu": ([*leading, "param"], _report_scale(prior_mu, exp_mask)),
+                "mu": ([*leading, "param"], _report_natural(spec, prior_mu)),
                 "sigma": ([*leading, "param"], prior_s),
                 **{
                     name: ([*leading, "subject"], prior_reported[..., i])
