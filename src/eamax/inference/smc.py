@@ -5,22 +5,15 @@ with the funnel geometry of a semi-centered hierarchical parameterization better
 single chain does. The number of tempering steps is data-dependent, so the loop is a
 `while_loop` rather than a `scan`.
 
-Two source repositories run this algorithm and neither dominates the other. One accumulates
-the log marginal likelihood and throws away every guard; the other has the guards and throws
-away the evidence. What ships here is the union, so that adopting it is a strict gain from
-either side:
+This driver keeps everything a hierarchical fit needs from the algorithm:
 
 * **the evidence** -- accumulated always, because it is one scalar add per iteration and it
-  is the entire scientific output of one of the two consumers;
+  is often the headline scientific output;
 * **per-chain tuning and per-chain clouds** -- the shape contract, so that sharing either is
   a named call rather than a silent default;
 * **a final resample**, so stored particles are genuinely equally weighted;
 * **unique-particle counts** on both sides of that resample, because nothing else detects a
   collapsed cloud.
-
-The degenerate-step-size repair deliberately lives in :mod:`eamax.inference.warmup` instead:
-it branches on a concrete count, so keeping it out is what lets this stay traceable
-end to end.
 """
 
 from typing import NamedTuple
@@ -47,8 +40,7 @@ class SMCResult(NamedTuple):
         ``resample_final`` was set.
     weights : array
         Shape ``(num_chains, num_particles)``. **Normalized linear-space** weights, not log
-        weights -- the field is named for what BlackJAX actually returns, because one
-        consumer stores exactly this array under the name ``log_weights``.
+        weights -- named for what BlackJAX actually returns.
     log_marginal_likelihood : array
         Shape ``(num_chains,)``. The SMC estimate of ``log p(data | model)``.
     num_iterations : array
@@ -77,10 +69,7 @@ def smc_inference_loop(key, smc_kernel, initial_state, max_steps=DEFAULT_MAX_STE
     Each step's ``log_likelihood_increment`` is the log normalizing constant of the
     incremental importance weights between successive tempered targets. They telescope from
     the normalized prior at ``lmbda = 0`` to the posterior at ``lmbda = 1``, so their sum is
-    the SMC estimate of the model evidence.
-
-    There is no variant that discards it. One of the two source loops does, which is why
-    that repository can compute no evidence at all despite running the algorithm that
+    the SMC estimate of the model evidence. It is accumulated always, since the algorithm
     produces it for free.
 
     Parameters
@@ -136,18 +125,16 @@ def tempered_smc(key, log_prior_fn, log_likelihood_fn, initial_particles, mcmc_p
         Shape ``(num_chains, num_particles, D)``. Per-chain clouds are the contract, and the
         only option: draw them with
         :func:`eamax.inference.init.init_particles_from_prior`, one independent cloud per
-        chain. A ``broadcast_particles`` helper that replicated a single cloud across chains
-        has been removed -- with one shared cloud the chains differ only in their SMC
-        randomness, so the between-chain spread understates the real uncertainty, which
-        matters most for the log marginal likelihood where that spread *is* the standard
-        error of the headline number.
+        chain. Sharing a single cloud across chains is not offered -- the chains would then
+        differ only in their SMC randomness, so the between-chain spread would understate the
+        real uncertainty, which matters most for the log marginal likelihood where that
+        spread *is* the standard error of the headline number.
     mcmc_parameters : dict of array
         Inner-kernel tuning, every leaf carrying a leading ``num_chains`` axis --
         ``step_size`` and ``inverse_mass_matrix`` exactly as
         :func:`eamax.inference.warmup.window_adaptation` returns them, one adaptation per
-        chain. Pass them through unmodified: the post-warm-up tuning repair that used to
-        live in :mod:`eamax.inference.warmup` has been removed, and a collapsed step size is
-        something to report rather than overwrite.
+        chain. Pass them through unmodified: a collapsed step size is something to report
+        rather than overwrite.
     num_integration_steps : int or None, optional
         Static leapfrog steps for the default HMC mutation kernel. Pass ``None`` when
         supplying a kernel that does not take it.
@@ -164,9 +151,7 @@ def tempered_smc(key, log_prior_fn, log_likelihood_fn, initial_particles, mcmc_p
         One extra resample after the loop. Each SMC step is resample -> mutate -> reweight,
         so the returned weights belong to the *final* temperature increment and were never
         resampled away; storing the particles as if uniform therefore reports the
-        penultimate, flatter target. Measured over 7480 scalar quantities, the weighted SD
-        was below the raw SD in 80.2% of them. Set ``False`` to reproduce a run made without
-        it.
+        penultimate, flatter target. Set ``False`` to reproduce a run made without it.
     mcmc_step_fn, mcmc_init_fn : callable, optional
         Default to ``blackjax.hmc.build_kernel()`` and ``blackjax.hmc.init``.
     map_chains : {"sequential", "vmap"}, optional

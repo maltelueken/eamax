@@ -1,7 +1,6 @@
 """The race likelihood: its guards, its censoring, and its N-independence.
 
-Several of these tests exist because the source repositories got the corresponding thing
-wrong or left it to convention. Each one names which.
+Several of these tests pin behaviour that is easy to get wrong or to leave to convention.
 """
 
 import jax
@@ -21,10 +20,9 @@ def _wald_pdf_sf(v, s, b):
 
 
 def test_matches_the_hand_written_two_accumulator_expression():
-    # The regression that makes deleting the six duplicated race implementations safe: the
-    # N-way form must reproduce the unrolled two-accumulator expression the source repos
-    # wrote by hand. Reduction order differs (a length-2 `sum` versus a scalar `+`), so this
-    # holds to a ULP rather than bit-for-bit.
+    # The N-way form must reproduce a hand-unrolled two-accumulator expression. Reduction
+    # order differs (a length-2 `sum` versus a scalar `+`), so this holds to a ULP rather
+    # than bit-for-bit.
     rng = np.random.default_rng(0)
     n = 2000
     rt = rng.uniform(0.4, 3.0, n)
@@ -47,10 +45,10 @@ def test_matches_the_hand_written_two_accumulator_expression():
 
 
 def test_penalty_slopes_when_rt_precedes_t0():
-    # THE regression `cognitive-control-comparison` violates today: it re-clamps the value
-    # returned by the per-accumulator function, flattening this penalty to a constant and
-    # removing the gradient that pushes t0 back into the valid region. `eamax` hands callers
-    # no intermediate to make that mistake with, so this must hold by construction.
+    # Re-clamping the value returned by the per-accumulator function would flatten this
+    # penalty to a constant and remove the gradient that pushes t0 back into the valid
+    # region. `eamax` hands callers no intermediate to make that mistake with, so this must
+    # hold by construction.
     v = jnp.array([[2.0], [1.0]])
     s = jnp.ones((2, 1))
     b = jnp.ones((2, 1))
@@ -84,8 +82,8 @@ def test_the_floor_does_not_scale_with_the_number_of_accumulators():
 
 def test_masked_trials_contribute_exactly_zero_whatever_they_hold():
     # Padding a ragged multi-subject dataset to a rectangle is only safe if the padding value
-    # cannot influence the result. In the source repos this held by convention (_PAD_RT = 1.0)
-    # rather than by construction.
+    # cannot influence the result -- here that holds by construction, whatever the padding
+    # holds.
     v = jnp.full((2, 4), 2.0)
     s = jnp.ones((2, 4))
     b = jnp.ones((2, 4))

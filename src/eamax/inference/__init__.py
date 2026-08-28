@@ -1,15 +1,12 @@
 """Parameter estimation: starting values, warmup, NUTS, and tempered SMC.
 
-Sampling machinery that the three consumer repositories had each grown a copy of. Priors
-and log-densities stay with them; this subpackage owns only the parts that are the same in
-every one -- how a chain is started, adapted, and run, and how the resulting draws are
-summarized.
+Priors and log-densities stay with the model; this subpackage owns how a chain is started,
+adapted, and run, and how the resulting draws are summarized.
 
 Four seams:
 
 * :mod:`~eamax.inference.transforms` -- unconstraining maps for
-  ``[*bounded_block, *positive_block]`` vectors, with the matching log-det-Jacobian, so the
-  forward map and its Jacobian stop being written twice.
+  ``[*bounded_block, *positive_block]`` vectors, with the matching log-det-Jacobian.
 * :mod:`~eamax.inference.init` -- starting values: dispersion source x support constraint x
   exhaustion fallback. Rejection sampling against the ``t0 < min(rt)`` constraint rather
   than clipping, which would put a point mass exactly where dispersion is needed.
@@ -24,16 +21,13 @@ Four seams:
   reading a file and deciding which fits to keep are different jobs: `eamax.io` reads and
   writes, and applies no diagnostic and no threshold of its own.
 
-One path, and no shortcuts off it. Whatever the sampler, a fit starts by drawing dispersed
+There is one prescribed path. Whatever the sampler, a fit starts by drawing dispersed
 per-chain starts from the prior with :func:`~eamax.inference.init.init_positions_from_prior`
 (NUTS) or :func:`~eamax.inference.init.init_particles_from_prior` (SMC), adapts **each**
 chain with :func:`~eamax.inference.warmup.window_adaptation`, and samples with the tuning
-that comes back, unmodified. Three helpers that let a consumer leave that path --
-``broadcast_warmup`` and ``fit_nuts(..., shared_warmup=True)``, ``broadcast_particles``, and
-``repair_degenerate_tuning`` -- have been **removed** rather than kept as opt-ins. The first
-two make R-hat and the log-marginal-likelihood spread unable to fail; the third papers over
-a bad start that :class:`~eamax.inference.init.T0Support` should have prevented. See
-:mod:`~eamax.inference.warmup` for the measurements behind each.
+that comes back, unmodified. Replicating one warmed state across chains, or sharing a single
+particle cloud, leaves R-hat and the log-marginal-likelihood spread with nothing to measure,
+so neither is offered.
 
 Sampling needs BlackJAX (``pip install 'eamax[inference]'``) and the TFP peer, but importing
 does not: no submodule imports BlackJAX at module scope, so ``transforms``, ``init`` and

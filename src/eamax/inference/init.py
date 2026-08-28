@@ -1,29 +1,22 @@
 """Starting values: where a sampler begins, and why it matters that it begins in support.
 
-The four source routines look unrelated -- a fixed list with the last entry overwritten
-from the data, per-chain rejection sampling from the prior, whole-particle rejection over
-every subject, and a bare deterministic prior mode -- but they are four points in one
-product:
+A starting rule is three independent choices:
 
     (source of dispersion) x (support constraint) x (what to do when rejection gives up)
 
-and they differ in which factors they leave out. This module supplies all three, so the
-choice becomes explicit rather than implied by which repository the code was copied from.
+This module supplies all three, so the choice is explicit.
 
 **The constraint.** For a race model the likelihood is undefined at ``t0 >= min(rt)``, and
-`eamax.race` covers that region with a slope-1e3 penalty whose whole purpose is to push
-`t0` back down. A chain that *starts* there starts against a wall: window adaptation sees
-divergence after divergence and its only response is to shrink the step size, which does
-not help, because the wall is not a curvature scale. Measured on the RDM at 500 trials,
-perturbing every parameter alike by ~0.35 in log space gives 1001/1000 divergences, max
-R-hat 1.53 and min ESS 7. Dispersion has to be support-aware to be worth anything.
+`eamax.race` covers that region with a steep penalty whose whole purpose is to push `t0`
+back down. A chain that *starts* there starts against a wall: window adaptation sees
+divergence after divergence and its only response is to shrink the step size, which does not
+help, because the wall is not a curvature scale. Dispersion has to be support-aware to be
+worth anything.
 
 **Rejection, not clipping.** Capping the offending coordinate looks cheaper and is worse: a
-cap is a point mass. Measured on the hierarchical RDM at a 0.9 cap, 55% of
-(particle, subject) draws were capped, 98% of particles had at least one, and the worst
-subject had 93% of its particles pinned to the single value ``log(0.9 * min_rt)`` -- which
-is dispersion destroyed in the one coordinate the routine exists to keep dispersed.
-Rejecting whole draws yields exactly the source distribution conditioned on the constraint.
+cap is a point mass, and it lands in the one coordinate the routine exists to keep dispersed.
+Rejecting whole draws instead yields exactly the source distribution conditioned on the
+constraint.
 
 Everything here speaks **unconstrained** coordinates, the ones a sampler explores. A prior
 that draws on the natural scale is composed with a transform by the caller; see
@@ -39,10 +32,8 @@ import jax
 import jax.numpy as jnp
 
 #: Highest fraction of the fastest observed response time that a starting `t0` may take.
-#: Close to 1 on purpose: the true `t0` sits at a median 0.807 of `min_rt` on the RDM and
-#: 0.926 on the conflict RDM, so a low ceiling puts every chain below the truth and leaves
-#: window adaptation to walk them all back up. At 0.9 the cap excluded the true `t0` for
-#: 4.5% of subjects outright.
+#: Close to 1 on purpose: the true `t0` often sits just below `min_rt`, so a low ceiling
+#: would put every chain below the truth and leave window adaptation to walk them all up.
 DEFAULT_MAX_T0_FRACTION = 0.97
 
 #: Redraws before a rejection sampler gives up on one draw.
@@ -52,9 +43,8 @@ DEFAULT_MAX_ATTEMPTS = 2000
 def min_valid_rt(rt, *, mask=None, sentinel=0.0, axis=-1):
     """Smallest response time that is a real observation.
 
-    Both source repositories state in prose that the non-crossing sentinel has to be
-    excluded before computing this, and neither provides a function that does it -- so the
-    exclusion is written out at each call site, or forgotten.
+    The non-crossing sentinel is excluded before taking the minimum, so a censored trial
+    never masquerades as the fastest response.
 
     Parameters
     ----------
@@ -99,10 +89,9 @@ class T0Support:
     def from_spec(cls, spec, min_rt, *, max_fraction=DEFAULT_MAX_T0_FRACTION):
         """Build from a :class:`eamax.design.Parameterization` and the fastest observed RT.
 
-        All four source routines locate ``t0`` as *the last entry*, positionally and
-        unenforced -- a comment in one of them says so outright. A spec knows the name, so
-        this asks it, the same way :mod:`eamax.design.engine` already does. The lookup costs
-        nothing and turns "silently clipped the wrong parameter" into an exception.
+        ``t0`` is located by name from the spec rather than assumed to be the last entry, so
+        a spec that orders its parameters differently raises instead of silently clipping the
+        wrong one.
 
         Parameters
         ----------
@@ -265,18 +254,15 @@ def init_particles_from_prior(flat_space, num_particles, key, *, support=None,
     """Prior particles in flat unconstrained coordinates.
 
     The constraint is tested on the *reconstructed* ``(S, P)`` subject parameters rather
-    than on a raw component of the prior's dict. The source version tests
-    ``sample["theta_bt"][:, -1]``, which silently requires ``t0`` to be both the last
-    parameter and in the centered block; going through the reconstruction costs one einsum
-    per draw and requires neither. Where ``t0`` *is* last and centered the two are the same
-    number, so nothing changes for any current configuration.
+    than on a raw component of the prior's dict, so it does not require ``t0`` to sit in any
+    particular block.
 
     The accepted region is where the posterior lives -- outside it the likelihood is a
     penalty, not a density -- so restricting the cloud costs no posterior mass. It is
-    nonetheless **not** the prior, and that matters: ``adaptive_tempered_smc`` weights
-    increments by the likelihood alone and never corrects the initial distribution, so only
-    mutation can. Store it as an initialisation artefact, not under a ``prior`` group, or
-    anything measuring posterior contraction against it will be wrong.
+    nonetheless **not** the prior, and that matters: tempered SMC weights increments by the
+    likelihood alone and never corrects the initial distribution. Store it as an
+    initialisation artefact, not under a ``prior`` group, or anything measuring posterior
+    contraction against it will be wrong.
 
     Parameters
     ----------
@@ -328,8 +314,7 @@ def init_position_from_mode(flat_space, *, num_chains=None, key=None, jitter=0.0
     """The prior's mode, optionally jittered into several dispersed starts.
 
     With the defaults this is one deterministic point with no dispersion and no support
-    check -- exactly what `cognitive-control-comparison` starts its warmup from. That is
-    reproducible on purpose, but it is worth knowing what it costs: every chain begins at
+    check. That is reproducible, but it is worth knowing what it costs: every chain begins at
     the same place, so between-chain variance starts at zero and any diagnostic built on it
     reports Monte-Carlo noise.
 
@@ -379,13 +364,12 @@ def init_position_from_values(values, *, spec=None, t0_index=None, offset=0, min
                               t0_fraction=0.5, transform=None):
     """A fixed natural-scale starting vector, with `t0` optionally derived from the data.
 
-    `eam-abi-robustness`'s configured initial position, whose `t0` entry is overwritten
-    with ``min(rt) / 2`` inside the fitting driver. Two things change here: the entry is
-    located by name rather than as index ``-1``, and the fraction is a named argument
-    rather than a division buried in the expression.
+    The ``t0`` entry is located by name and set to a fraction of the fastest observed
+    response time.
 
-    This is the one builder with no dispersion at all. It is kept because it is what the
-    existing configurations specify, not because it is a good way to start four chains.
+    This is the one builder with no dispersion at all. It is a poor way to start several
+    chains -- prefer :func:`init_positions_from_prior` -- and is kept only for callers that
+    need a fixed starting vector.
 
     Parameters
     ----------
@@ -435,13 +419,12 @@ def jitter_positions(position, num_chains, key, *, scale=0.1, support=None,
                      max_attempts=DEFAULT_MAX_ATTEMPTS):
     """Disperse one unconstrained position into `num_chains` starts.
 
-    The route for a consumer with no prior object to hand. It is the weakest of the four
-    sources -- an arbitrary width standing in for the prior's own scale -- but it is enough
-    to give R-hat something to measure, which a replicated position is not.
+    The route for a caller with no prior object to hand. An arbitrary width stands in for
+    the prior's own scale, so this is weaker than drawing from the prior, but it is enough to
+    give R-hat something to measure, which a replicated position is not.
 
-    ``support`` is not really optional. Undirected jitter is precisely what produced
-    1001/1000 divergences in the measurement recorded on this module, so omitting it while
-    jittering warns.
+    ``support`` is not really optional: undirected jitter easily lands a chain on the
+    likelihood's penalty wall, so omitting it while jittering warns.
 
     Parameters
     ----------

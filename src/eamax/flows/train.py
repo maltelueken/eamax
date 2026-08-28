@@ -10,14 +10,9 @@ or, equivalently, replacing their log-density with a constant, which zeroes thei
 -- makes the flow fit `p(t | T < t_max) = p(t) / (1 - q)` instead of `p(t)`, where
 `q = P(T > t_max)`. The fitted survival then decays to 0 rather than to `q`, and the density
 is inflated by `-log(1 - q)` uniformly in `t`. Both errors depend on the parameters, so they
-do not cancel out of a likelihood ratio and they bias the posterior.
-
-How much censoring there is, measured in the source repository over its training prior
-(`dt = 0.004`, `t_max = 4.0`, 2000 draws x 500 trials): 3.16% of trials overall, 25.5% of
-draws losing at least one trial, 1.5% losing more than half. It is concentrated rather than
-diffuse -- draws with `q > 0.5` have mean drift 0.22 against 4.95 for clean draws, i.e. the
-slow-drift, high-boundary corner where the flow has the least data and the most distorted
-target.
+do not cancel out of a likelihood ratio and they bias the posterior. The censoring is
+concentrated in the slow-drift, high-boundary corner, exactly where the flow has the least
+data.
 
 Scoring censored trials by `log S(t_max)` is the standard right-censored MLE and removes the
 bias at no extra cost, since the flow's survival is exact given the flow.

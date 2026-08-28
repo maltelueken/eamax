@@ -1,9 +1,6 @@
 """Evidence accumulation models in JAX: simulation and likelihoods.
 
-Shared implementation of the racing diffusion model and its relatives, extracted from
-three research repositories that had each grown their own copy.
-
-The library is four seams deep:
+An implementation of the racing diffusion model and its relatives, organised as four parts:
 
 * `eamax.accumulators` -- first-passage-time distributions (`Wald`, `LBA`, pulsed
   variants). They see *decision times* and return raw log densities.
@@ -77,14 +74,12 @@ def enable_x64():
     """Turn on JAX's 64-bit mode.
 
     Race log-densities are precision-sensitive: small squared terms, exp/log transforms of
-    sub-unit values like `t0`, and survival functions evaluated far into the tail. Every
-    consumer repo runs in float64, and the reference tests here assume it.
+    sub-unit values like `t0`, and survival functions evaluated far into the tail. Run in
+    float64; the reference tests here assume it.
 
-    This is a function rather than an import-time side effect on purpose. A library that
-    mutates global JAX configuration when imported changes the numerics of unrelated code
-    in the same process; `eam-abi-robustness/src/rdm_jax.py` does exactly that today, and
-    a sibling module documents that it *depends* on the side effect. Call this explicitly
-    from an entry point instead.
+    This is a function rather than an import-time side effect on purpose: a library that
+    changed JAX's global configuration on import would change the numerics of unrelated code
+    in the same process. Call it explicitly from your entry point instead.
     """
     import jax
 

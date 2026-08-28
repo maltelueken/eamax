@@ -4,10 +4,8 @@ A diffusion with drift `v` and within-trial noise `s` started at zero first reac
 boundary `b` at an inverse-Gaussian time with mean `mu = b / v` and shape
 `lam = (b / s)^2`. Racing several of these is the racing diffusion model.
 
-The two primitives here are the exact ones validated against `scipy.stats.invgauss` to
-~1e-13 and against the R package EMC2 to 1e-9 (see `tests/test_emc2_reference.py`); they
-are reproduced unchanged from `eam-abi-robustness/src/rdm_jax.py`, which is where that
-validation was done.
+The two primitives here are validated against `scipy.stats.invgauss` and against the R
+package EMC2 (see `tests/test_emc2_reference.py`).
 """
 
 import jax.numpy as jnp

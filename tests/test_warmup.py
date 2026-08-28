@@ -1,12 +1,11 @@
 """Window adaptation, and the diagnostic it either enables or destroys.
 
 The headline here is the first test class: it exercises **both** initialisation strategies
-against the same target, which no source repository can do, because each repository has only
-one of them. That comparison is the whole argument for per-chain adaptation being the only
-warm-up `eamax` offers.
+against the same target. That comparison is the whole argument for per-chain adaptation being
+the only warm-up `eamax` offers.
 
-`eamax` ships no `broadcast_warmup`, so the shared-start arm is built here, in the test, out
-of `jnp.broadcast_to`. That is deliberate: the measurement stays, the API does not.
+`eamax` offers no shared-start warm-up, so the shared-start arm is built here, in the test,
+out of `jnp.broadcast_to`. That is deliberate: the measurement stays, the API does not.
 """
 
 import jax

@@ -11,20 +11,17 @@ Two contracts are worth stating because they are what make the nesting work:
   outer `vmap`, `data` is a per-dataset traced slice, so building the closure in here gives
   each dataset its own; building it outside would bake one dataset in before the vmap.
 * `make_init_positions(key, data)` is called inside for the same reason, and that is what
-  lets starting values be per-dataset *and* per-chain *and* support-aware at once -- the
-  combination none of the source repositories can express, since theirs is a single fixed
-  vector with one entry overwritten from the data.
+  lets starting values be per-dataset *and* per-chain *and* support-aware at once.
 
 Positions are unconstrained throughout. The log-density owns its own transform and
 Jacobian; nothing here transforms anything.
 
-There is one warm-up path and no way around it. ``make_init_positions`` must return one
-dispersed start *per chain* -- :func:`eamax.inference.init.init_positions_from_prior` is
-what it is for -- and every chain is then adapted independently by
-:func:`eamax.inference.warmup.window_adaptation`. The ``shared_warmup=True`` switch that
-adapted one chain and replicated it has been **removed**, as has the post-warm-up tuning
-repair; see :mod:`eamax.inference.warmup` for why neither should be reachable from a
-consumer repository.
+There is one warm-up path. ``make_init_positions`` must return one dispersed start *per
+chain* -- :func:`eamax.inference.init.init_positions_from_prior` is what it is for -- and
+every chain is then adapted independently by
+:func:`eamax.inference.warmup.window_adaptation`. Sharing one warmed state across chains, or
+repairing tuning afterwards, is deliberately not offered; see
+:mod:`eamax.inference.warmup` for why.
 """
 
 import jax

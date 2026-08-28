@@ -6,22 +6,19 @@ the others had not yet finished gives
     p_r(t) * prod_{k != r} S_k(t)
 
 so every race likelihood is a winner's density times the losers' survival functions. That
-is the whole model. The three source repos wrote it out six times -- twice for two
-accumulators with hand-unrolled `jnp.where`, twice hierarchically, twice hybrid -- and the
-copies drifted in their guards. Here it is once, N-way, with the two-accumulator case an
-instance rather than a code path.
+is the whole model, written once here for any number of accumulators, with the
+two-accumulator case an instance rather than a special path.
 
-Three things this module owns that the source repos scattered:
+Three things this module owns:
 
-* **Non-decision time.** `t0` is a race-level shift, not an accumulator property; no model
-  in any consumer repo gives it a per-accumulator value. Accumulators see decision times.
+* **Non-decision time.** `t0` is a race-level shift, not an accumulator property.
+  Accumulators see decision times.
 * **All guard logic.** The floor, the invalid-RT penalty, NaN containment and the padding
   mask apply once, here, to the assembled trial total. Callers get a finished number and
   no intermediate to re-clamp -- see `eamax.numerics` for why that matters.
 * **Right-censoring.** Trials that never crossed have to be handled on *both* sides of the
   accumulator call: the evaluation time is substituted before, and the trial's score is
-  replaced after. That is why `race_loglik` takes a closure rather than arrays -- an
-  array-taking signature would push half the invariant back into caller code.
+  replaced after. That is why `race_loglik` takes a closure rather than arrays.
 """
 
 import jax.numpy as jnp
@@ -39,9 +36,8 @@ def winner_mask(response, num_accumulators, first_response=0):
     num_accumulators : int
         N.
     first_response : int, optional
-        Index of the first accumulator in ``response``'s coding. The two-accumulator repos
-        label choices ``0``/``1``; the empirical datasets label responses ``1..R``. Passing
-        ``1`` for the latter is the whole adjustment.
+        Index of the first accumulator in ``response``'s coding. Pass ``0`` when choices are
+        labelled ``0..N-1`` and ``1`` when they are labelled ``1..N``.
 
     Returns
     -------
@@ -170,8 +166,8 @@ def race_from_arrays(
     Returns
     -------
     array
-        Per-trial log-likelihood, shape ``(T,)``. Callers sum; ``eamax`` does not, because
-        the three consumers reduce over different axes.
+        Per-trial log-likelihood, shape ``(T,)``. Callers sum; ``eamax`` does not, so you
+        are free to reduce over whichever axis suits your model.
     """
     log_pdf = contain_nan(jnp.asarray(log_pdf), min_p)
     log_sf = contain_nan(jnp.asarray(log_sf), min_p)
@@ -210,9 +206,7 @@ def race_loglik(
     """Per-trial log-likelihood of a race, given a per-accumulator density function.
 
     The caller owns every outer vmap. Shapes here are one dataset's worth of trials; map
-    over datasets, subjects or prior draws outside. Supporting a leading batch axis inside
-    would mean ``in_axes`` plumbing on every parameter, and the three consumers batch over
-    three different axes.
+    over datasets, subjects or prior draws outside.
 
     Parameters
     ----------

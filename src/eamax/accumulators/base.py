@@ -5,12 +5,9 @@ how much probability is left beyond here -- plus how to draw from it. It knows n
 about non-decision time, about racing, about which accumulator won, or about how bad a
 trial has to be before it gets floored. All of that belongs to `eamax.race`.
 
-That split is not cosmetic. In the source repos the per-accumulator function owned the
-`t0` shift, the parameter guards, the density floor *and* the invalid-RT penalty, and it
-had to warn callers in prose not to clamp its output again. One consumer clamped it
-anyway, flattening the penalty to a constant and silently removing the gradient that
-pushes `t0` back into the valid region. Here there is no intermediate to re-clamp:
-accumulators return raw log-densities, and the race applies the guards once at the end.
+That split keeps the guards in one place. Accumulators return raw log-densities, and the
+race applies the floor, the penalty and NaN containment once at the end, so there is no
+intermediate for a caller to re-clamp by mistake.
 
 Parameters travel as a dict keyed by `param_names` rather than as positional arguments,
 so a parameterization can be checked against an accumulator once, at construction, and so

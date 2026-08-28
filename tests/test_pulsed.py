@@ -124,7 +124,7 @@ def test_euler_maruyama_reproduces_the_wald_when_the_pulse_vanishes():
 
 def test_non_crossing_accumulators_return_inf_not_a_negative_sentinel():
     # `inf` is what lets the race take a plain `min` and read an all-`inf` trial as
-    # right-censored, instead of the trial-level special case the source repo used.
+    # right-censored, with no trial-level special case.
     params = {
         "v": jnp.array([0.01]),
         "amp": jnp.array([0.0]),

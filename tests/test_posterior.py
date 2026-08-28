@@ -1,9 +1,8 @@
 """Tests for the array-level posterior helpers.
 
-The load-bearing one is :func:`back_transform_then_select`. `eam-abi-robustness` keeps the
-two steps in the right order and explains why in a comment; the test below builds the case
-the comment describes and shows that the wrong order returns finite, plausible, wrong
-numbers rather than failing.
+The load-bearing one is :func:`back_transform_then_select`. The two steps do not commute;
+the test below builds a case where the wrong order returns finite, plausible, wrong numbers
+rather than failing.
 """
 
 import numpy as np
@@ -171,8 +170,8 @@ def test_select_params_rejects_a_name_list_of_the_wrong_length():
 def _hierarchical_case():
     """A layout where the two orders differ: two bounded hyperparameters, then three positive.
 
-    This is `eam-abi-robustness`'s hierarchical ("meta") layout. The subset wanted is the
-    subject-level block only, which is exactly what the NPE comparison asks for.
+    A hierarchical layout where the subset wanted is the subject-level block only, which is
+    what an NPE comparison asks for.
     """
     transform = BlockTransform(lower=[0.0, 0.0], upper=[1.0, 1.0])
     stored = ["p_1", "p_2", "v", "b", "t0"]

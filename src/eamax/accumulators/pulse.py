@@ -14,16 +14,16 @@ from time scale is what makes the two parameters separately interpretable and se
 priorable; parameterising the instantaneous drift instead would entangle them.
 
 The effect is transient: `C` decays back to zero, so conflict perturbs *when* an
-accumulator crosses, not where it ends up. `a` (the shape) is fixed at 2 by every consumer,
-which is what makes the pulse rise-then-decay with a single time constant.
+accumulator crosses, not where it ends up. `a` (the shape) is fixed at 2, which is what
+makes the pulse rise-then-decay with a single time constant.
 
-`g` is undefined at `t = 0`; every caller starts its grid at `dt > 0`.
+`g` is undefined at `t = 0`; the evaluation grid starts at `dt > 0`.
 """
 
 import jax.numpy as jnp
 
-#: Gamma shape. Fixed at 2 in every consumer: it is what makes the pulse a single
-#: rise-and-decay rather than a family of shapes competing with `tau` for the same signal.
+#: Gamma shape. Fixed at 2: it is what makes the pulse a single rise-and-decay rather than
+#: a family of shapes competing with `tau` for the same signal.
 DEFAULT_SHAPE = 2.0
 
 

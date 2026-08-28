@@ -2,41 +2,29 @@
 
 Adaptation produces two things a sampler needs -- a step size and an inverse mass matrix --
 and one thing a *reader* needs: chains that started somewhere different from each other.
-The three source repositories treat the second as optional, and it is not.
 
 Replicating a single warmed-up state across chains leaves R-hat with nothing to measure.
 Between-chain variance starts at zero and every chain begins inside whichever mode the one
-warm-up happened to find, so the diagnostic reports Monte-Carlo noise. Measured on a
-bimodal target with modes at +-6 (4 chains x 2000 draws): the shared start reports max
-R-hat 1.001 while putting 100% of its mass in a single mode; an overdispersed start reports
-1.734 and splits 50/50, which is the truth. The draws from the shared start are not
-*biased* -- every chain gets a fresh key, and adaptation has already brought the state to
-stationarity -- but the number reported alongside them cannot fail, so it carries no
-information. A downstream filter that drops fits on that number is filtering on noise.
+warm-up happened to find, so the diagnostic can no longer fail even when the chains have all
+settled into a single mode of a multimodal target. The draws themselves are not biased, but
+the number reported alongside them carries no information, and a downstream filter that drops
+fits on it is filtering on noise.
 
 So there is exactly one warm-up entry point, :func:`window_adaptation`, and it is per-chain.
-A ``broadcast_warmup`` that adapted one chain and replicated it across the rest used to live
-here and has been **removed**, along with the ``shared_warmup`` switch on
-:func:`eamax.inference.mcmc.fit_nuts` that reached it. Consumers should not have the option:
-what it saves is warm-up work, and what it spends is the one diagnostic that says whether
-the fit is usable at all.
+Adapting one chain and replicating it is deliberately not offered: what it saves is warm-up
+work, and what it spends is the one diagnostic that says whether the fit is usable at all.
 
 **The prescribed path is: draw dispersed starts from the prior with**
 :func:`eamax.inference.init.init_positions_from_prior` **(or**
 :func:`~eamax.inference.init.init_particles_from_prior` **for SMC), adapt every chain with**
 :func:`window_adaptation`, **then sample.** Nothing in between.
 
-Nothing repairs a collapsed adaptation either. A ``repair_degenerate_tuning`` that replaced
-a step size two orders of magnitude below its siblings' with the healthy chains' median has
-also been removed. It treated a symptom: in every population that produced a degenerate step
-size, the degenerate chain was the chain with the most subjects whose ``t0`` started above
-their fastest observed response time -- a start outside the support, which
-:class:`eamax.inference.init.T0Support` prevents at the source. Repairing the tuning
-afterwards left those chains under-dispersed at 0.16-0.83x their siblings' spread and still
-breaking R-hat (1.94 / 2.60 / 2.76 across three populations), so the repair bought a
-plausible-looking step size and nothing else. A chain whose adaptation collapses should be
-*reported*, not rescued: start inside the support, and if a step size still collapses, that
-is a finding about the posterior and belongs in the run's output.
+Nothing repairs a collapsed adaptation either. Overwriting a collapsed step size with the
+healthy chains' median treats a symptom -- the usual cause is a chain that started outside
+the ``t0`` support, which :class:`eamax.inference.init.T0Support` prevents at the source. A
+chain whose adaptation collapses should be *reported*, not rescued: start inside the support,
+and if a step size still collapses, that is a finding about the posterior and belongs in the
+run's output.
 """
 
 import jax

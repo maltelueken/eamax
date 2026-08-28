@@ -109,10 +109,10 @@ class TestFitNuts:
             )
 
     def test_starting_values_may_depend_on_the_data(self):
-        """The combination none of the source repositories can express.
+        """Starting values that depend on both the key and the dataset.
 
-        Their initial position is one fixed vector with a single entry overwritten from the
-        data; here the whole start is a function of both the key and the dataset.
+        The whole start is a function of both the PRNG key and the per-dataset data, not a
+        fixed vector with one entry overwritten.
         """
         seen = {}
 

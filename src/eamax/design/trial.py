@@ -4,11 +4,9 @@ A registered pytree, so a whole design can be passed through `jax.vmap` and `jax
 without unpacking it field by field at every call site.
 
 Every field is optional except the ones a given model actually reads, and all of them are
-per-trial arrays of the same length -- there is no design *matrix* here. The three source
-repositories all route covariates rather than regressing on them (accumulator identity
-picks a sign, congruency picks between two parameters, the distractor picks which
-accumulator carries a pulse), and inventing a matrix formalism none of them uses would add
-machinery without adding reach.
+per-trial arrays of the same length -- there is no design *matrix* here. Covariates are
+routed rather than regressed on: accumulator identity picks a sign, congruency picks between
+two parameters, the distractor picks which accumulator carries a pulse.
 """
 
 import jax
@@ -62,10 +60,10 @@ class TrialDesign:
     def from_columns(cls, data, columns, mask=None, first_response=1):
         """Build from a `(T, C)` array plus the column names in order.
 
-        The empirical datasets arrive as ``[rt, response, target, congruency, distractor]``;
-        the two-accumulator simulators produce ``[rt, response]`` or
-        ``[rt, response, condition]``. Naming the columns at the boundary keeps that
-        difference out of the model code.
+        Different datasets carry different columns -- ``[rt, response, target, congruency,
+        distractor]`` for a full conflict task, ``[rt, response]`` or
+        ``[rt, response, condition]`` for a two-accumulator one. Naming the columns at the
+        boundary keeps that difference out of the model code.
 
         Parameters
         ----------

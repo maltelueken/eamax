@@ -1,7 +1,6 @@
 """Numerical guards shared by every density and likelihood in `eamax`.
 
-Three distinct jobs live here, and keeping them distinct is the point of the module.
-The three source repos conflated them, with consequences documented below.
+Three distinct jobs live here, and keeping them distinct is the point of the module:
 
 1. **Parameter guards** (`guard_positive`) keep strictly-positive parameters away from
    zero so the closed forms stay finite under an unconstrained sampler.
@@ -10,32 +9,25 @@ The three source repos conflated them, with consequences documented below.
 3. **The trial floor and the invalid-RT penalty** (`finalize_trial_logp`) apply once, to
    the assembled per-trial log-likelihood.
 
-Two things this module deliberately does not do, both learned from the source repos:
+Two things this module deliberately does not do:
 
-* **It never floors a density component.** `racing-diffusion-conflict` and
-  `cognitive-control-comparison` clamp `log_pdf` and `log_sf` separately at
-  `log(1e-12)`. That makes the effective floor scale with the number of accumulators
-  (a four-response race floors at `4 * log(1e-12)`) while simultaneously *inflating*
-  every deep-tail survival term once per loser. For a likelihood used to compare models
-  by marginal likelihood, that bias has the wrong sign: it flatters models that push
-  losers into the tail. Flooring the assembled trial total once, as `eam-abi-robustness`
-  does, is N-independent -- and it is the only variant validated against an outside
-  implementation (EMC2, to 1e-9 on total dataset log-likelihood).
+* **It never floors a density component.** Flooring the winner's density and each loser's
+  survival separately would make the effective floor grow with the number of accumulators
+  and inflate deep-tail survival terms. The floor applies once, to the assembled trial
+  total, so it is independent of the number of accumulators.
 * **It never lets a caller re-clamp the penalty.** The `rt <= t0` penalty is by
-  construction `<= log_floor`, so passing it through a `maximum(..., log_floor)` flattens
-  it to a constant and destroys the gradient that pushes `t0` back into the valid region.
-  `eamax` gives callers no intermediate to make that mistake with: `finalize_trial_logp`
-  is the last step and returns a finished per-trial value.
+  construction below the floor, so passing it through another floor would flatten it to a
+  constant and destroy the gradient that pushes `t0` back into the valid region.
+  `finalize_trial_logp` is the last step and returns a finished per-trial value, leaving
+  no intermediate to re-clamp.
 
 `MIN_P` and `MIN_RT` share a default value but are different quantities -- a probability
-floor and a time floor -- and are spelled separately so they can diverge without one
-silently dragging the other.
+floor and a time floor -- and are spelled separately so they can diverge independently.
 """
 
 import jax.numpy as jnp
 
 #: Floor on a per-trial likelihood, in probability units. `log(MIN_P)` is the log floor.
-#: Matches EMC2's `log_likelihood_race`, which floors each trial at `min_ll = log(1e-10)`.
 MIN_P = 1e-10
 
 #: Floor on a decision time (`rt - t0`), in seconds. Below this a trial is *invalid*

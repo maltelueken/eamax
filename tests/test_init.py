@@ -31,7 +31,7 @@ NUM_CENTERED = 2
 
 
 def _t0_first_spec():
-    """A spec whose `t0` is at index 0, which no source repository can express."""
+    """A spec whose `t0` is at index 0 rather than last."""
     t0 = coef("t0", tfb().Exp())
     v = coef("V", tfb().Exp())
     b = coef("B", tfb().Exp())
@@ -53,8 +53,7 @@ def spec():
 
 @pytest.fixture
 def prior():
-    # `t0` sits last, so it lands in the trailing centered block -- the arrangement the
-    # source repositories assume throughout.
+    # `t0` sits last, so it lands in the trailing centered block -- the usual arrangement.
     return HierarchicalLKJMVNPrior(
         NUM_SUBJECTS,
         NUM_PARAMS,

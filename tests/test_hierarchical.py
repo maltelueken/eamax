@@ -48,8 +48,7 @@ def test_psi_raw_is_a_valid_correlation_cholesky():
 
 
 def test_reconstruction_reproduces_the_formula_it_replaced():
-    # The verbatim block that appeared in about six places across the source repositories.
-    # This test is what makes deleting those copies safe.
+    # The single reconstruction formula must match a hand-written expansion.
     draw = _prior().sample(jax.random.key(2))
     num_ncp = 3
 
@@ -137,8 +136,7 @@ def test_interval_helper_splits_variance_between_population_and_subjects():
 
 def test_a_hierarchical_likelihood_is_just_the_race_vmapped_over_subjects():
     # There is no separate hierarchical likelihood in `eamax`, and this is why: once the
-    # race handles one subject's trials with a mask, the multi-subject case is a vmap. The
-    # source repositories maintained four near-identical hierarchical likelihood functions.
+    # race handles one subject's trials with a mask, the multi-subject case is a vmap.
     from eamax import race_loglik
     from eamax.accumulators import Wald
     from eamax.design import TrialDesign, build_params_fn, rdm_intercept_slope_spec

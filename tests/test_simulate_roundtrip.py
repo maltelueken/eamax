@@ -1,10 +1,7 @@
 """Simulation and scoring must describe the same model.
 
-The source repositories asserted this in prose -- "simulating from a set of parameters is
-guaranteed to match what the likelihood actually scores, because both call the same
-parameter map" -- and never tested it. The shared `params_fn` makes the *parameterization*
-half structural; these tests check the other half, that the accumulator's sampler and its
-density agree.
+The shared `params_fn` makes the *parameterization* half of this structural; these tests
+check the other half, that the accumulator's sampler and its density agree.
 
 The instrument is the score test rather than parameter recovery. At the true parameters the
 expected gradient of the log-likelihood is exactly zero, so averaging that gradient over

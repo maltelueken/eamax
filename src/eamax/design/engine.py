@@ -1,9 +1,8 @@
 """From a flat parameter vector plus a trial design to per-accumulator quantities.
 
 This is the layer that turns `theta` into the `(N, T)` drifts, thresholds and noises an
-accumulator wants, and it is the layer the three source repositories each wrote their own
-version of. It now does so generically: each quantity is assembled by summing its terms, and
-each term is a coefficient times a product of contrast columns (see
+accumulator wants. It does so generically: each quantity is assembled by summing its terms,
+and each term is a coefficient times a product of contrast columns (see
 :mod:`eamax.design.contrasts`). There is no hard-coded `average + sgn * difference / 2` and
 no fixed list of covariates -- adding a parameter or a covariate is adding a quantity or a
 contrast, not editing this file.
@@ -12,9 +11,8 @@ Everything here is elementwise and branch-free on traced values: contrasts selec
 `jnp.where`, never with a Python `if`, so shapes stay static under `jit` and `vmap`. The
 parameterization's structure is fixed in Python before tracing; only `theta` is traced.
 
-The same `params_fn` feeds the likelihood and the simulator. That is the point -- in the
-source repos, simulation and scoring shared a parameterization only by convention and a
-docstring, and nothing tested it.
+The same `params_fn` feeds the likelihood and the simulator, so a parameterization cannot
+drift between the model you simulate from and the model you fit.
 """
 
 import jax.numpy as jnp

@@ -1,9 +1,7 @@
 """Flat unconstrained coordinates for the hierarchical prior.
 
-The tests that matter here are the two nobody could write before: that the log-det-Jacobian
-is right, and that the workaround both source repositories carry is right too. Each of them
-hand-writes the two non-trivial terms with a comment blaming a TFP broadcasting bug, and
-neither ever checked the result against anything.
+The tests that matter here check that the log-det-Jacobian is right, and that the generic
+form agrees with a hand-written reference that works around a TFP broadcasting quirk.
 """
 
 import jax
@@ -106,12 +104,12 @@ def test_sample_particles_draws_independently(flat_space):
 # --------------------------------------------------------------------------- #
 # The Jacobian
 # --------------------------------------------------------------------------- #
-def test_the_jacobian_matches_the_hand_written_formula_the_repos_use(flat_space):
-    """`eamax`'s generic form reproduces the source repositories' inlined one exactly.
+def test_the_jacobian_matches_the_hand_written_formula(flat_space):
+    """`eamax`'s generic form reproduces the hand-written inlined one exactly.
 
-    This is what makes the migration a no-op numerically: both repos compute
-    `sum(unconstrained["s"]) + CorrelationCholesky ljd`, naming the prior's components
-    inline. `joint_log_det_jacobian` gets the same number without naming anything.
+    The hand-written version computes `sum(unconstrained["s"]) + CorrelationCholesky ljd`,
+    naming the prior's components inline. `joint_log_det_jacobian` gets the same number
+    without naming anything.
     """
     for flat in _draws(flat_space):
         unconstrained = flat_space.unravel(flat)
@@ -162,7 +160,7 @@ def test_a_square_bijector_matches_an_autodiff_determinant():
 
 
 def test_omitting_event_ndims_overcounts_by_the_number_of_parameters(flat_space):
-    """Canary for the miscall both source repositories work around.
+    """Canary for the TFP miscall this works around.
 
     Without `event_ndims` each component falls back to its bijector's *minimum* event rank
     -- 0 for `Exp` -- so that term is returned unreduced with shape `(P,)` and TFP

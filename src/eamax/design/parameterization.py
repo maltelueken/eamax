@@ -2,21 +2,18 @@
 
 A parameterization says which coefficients a model estimates, in what order, on which
 transformation (link), and how each per-accumulator quantity is assembled from them as a sum
-of contrast-weighted terms (see :mod:`eamax.design.contrasts`). It is the piece the three
-source repositories each reinvented, and the piece that makes one engine serve all of them --
-and, now, models they could not express at all, because a quantity is an open-ended linear
-combination rather than a fixed `average + sgn * difference / 2`.
+of contrast-weighted terms (see :mod:`eamax.design.contrasts`). Because a quantity is an
+open-ended linear combination rather than a fixed `average + sgn * difference / 2`, one
+engine serves a wide range of models.
 
-Two ideas replace the previous `ParamSpec`'s dozen special-purpose fields:
+Two ideas hold it together:
 
 * **Coefficients carry a bijector.** The link is inseparable from the parameterization --
   it is which quantities are strictly positive and which are signed differences -- so each
   `Free` coefficient owns a TensorFlow Probability bijector -- :func:`eamax.design.log` for a
   positive quantity, :func:`eamax.design.identity` for a signed one, or anything else (see
-  :mod:`eamax.design.links`). `constrain` and
-  `log_det_jacobian` compose over them, so the design layer owns the change of variables but
-  no prior: the three consumers disagree scientifically about priors, and there is no shared
-  implementation underneath to extract.
+  :mod:`eamax.design.links`). `constrain` and `log_det_jacobian` compose over them, so the
+  design layer owns the change of variables but no prior.
 
 * **The vector order is stated explicitly.** ``names``, ``index`` and the trailing
   ``num_centered`` block a hierarchical prior centres are all read off ``order``, which is
@@ -44,9 +41,8 @@ class Free:
     Attributes
     ----------
     name : str
-        The coefficient's name, and its label in ``names``/``index``. These are external
-        contracts (config keys, saved coordinate labels), so presets keep the names their
-        consumers already depend on.
+        The coefficient's name, and its label in ``names``/``index``. Names are stable
+        contracts (config keys, saved coordinate labels), so presets keep them fixed.
     bijector : tfp bijector
         The coefficient's link: maps the unconstrained real value to the natural scale. Use
         :func:`eamax.design.log` for a strictly positive quantity and
@@ -216,8 +212,7 @@ class Parameterization:
 
         Each coefficient is a scalar transform, so its ``forward_log_det_jacobian`` is called
         with ``event_ndims=0``; for ``Exp`` this contributes ``theta`` and for ``Identity``
-        nothing, reproducing the old closed form. Belongs with whichever term the consumer
-        treats as the prior.
+        nothing. Add it to whichever term you treat as the prior.
         """
         theta = jnp.asarray(theta)
         total = jnp.zeros(jnp.shape(theta)[:-1])
@@ -233,7 +228,7 @@ class Parameterization:
     def of_names(cls, names, links):
         """A bare layout from parallel ``names`` and ``"log"``/``"identity"`` links.
 
-        No quantities -- for consumers that only need ``names`` and ``constrain`` /
+        No quantities -- for callers that only need ``names`` and ``constrain`` /
         ``to_natural`` (posterior reporting and back-transforms), not the accumulator map.
         """
         order = tuple(Free(name, bijector_for_link(link)) for name, link in zip(names, links))

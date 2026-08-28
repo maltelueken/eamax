@@ -3,28 +3,24 @@
 A pulsed accumulator has no closed-form first-passage density, so it is simulated by
 integrating `dx = v(t) dt + s dW` on a fixed grid and testing for boundary crossings.
 
-Two corrections make the discretisation far more accurate than a naive grid test, and both
-matter:
+Two corrections make the discretisation far more accurate than a naive grid test:
 
 * **Brownian bridge.** Between two grid points that both sit below the boundary, the path
   may still have crossed. Conditional on its endpoints the increment is a Brownian bridge,
   whose maximum exceeds `b` with probability `exp(-2 (b - x_prev)(b - x) / (s^2 dt))`.
   Sampling that event recovers the crossings a grid test silently drops -- which are
-  exactly the fast ones, so omitting it biases response times upward. Measured in the
-  source repository: roughly a 3x reduction in mean-RT bias at `dt = 0.005` and 5-20x at
-  `dt = 0.0005`, improving weak order from `dt^0.66` to `dt^0.9` for about 1.55x runtime.
+  exactly the fast ones, so omitting it biases response times upward.
 * **Within-step dequantisation.** The crossing time is `(index + u) * dt` with `u` uniform,
   rather than `index * dt`. Without it every simulated time is a multiple of `dt`, which is
   visible in any quantile-based summary and interacts badly with a floor on `rt - t0`.
 
 A non-crossing accumulator returns `inf`, not a negative sentinel. That is what lets the
 race take a plain `min` over accumulators and read an all-`inf` trial as right-censored,
-without the trial-level special case the source repository baked into its simulator.
+with no special case.
 
 Memory is the binding constraint: the drift grid alone is `size * num_steps` floats, and
-the crossing test needs several arrays that shape. At `dt = 1e-3` and `t_max = 4` that is
-32 KB per accumulator-trial, so 100k of them is 3.2 GB. `chunk_size` bounds it by mapping
-over slices instead, trading a little speed for a working memory footprint.
+the crossing test needs several arrays that shape. `chunk_size` bounds peak memory by
+mapping over slices instead, trading a little speed for a smaller footprint.
 """
 
 import jax

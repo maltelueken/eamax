@@ -42,10 +42,10 @@ def test_chains_stuck_in_different_places_report_more_than_one():
 
 
 def test_it_matches_arviz_to_the_precision_a_threshold_cares_about():
-    """So a consumer switching off `arviz_stats` keeps the numbers it had.
+    """So a caller switching off `arviz_stats` keeps the numbers it had.
 
-    `eam-abi-robustness` decides which fits enter its headline comparison with
-    ``rhat < 1.01``; the statistic has to be the same one, not merely a similar one.
+    A convergence filter such as ``rhat < 1.01`` needs the same statistic, not merely a
+    similar one.
     """
     arviz_stats = pytest.importorskip("arviz_stats")
     xarray = pytest.importorskip("xarray")

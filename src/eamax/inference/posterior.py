@@ -18,8 +18,7 @@ order its analysis calls for -- visibly, in its own code.
 The third, :func:`back_transform_then_select`, is the reason this module exists as
 something other than a convenience. Reading samples back involves two steps that do not
 commute, and getting them the wrong way round produces plausible-looking numbers rather
-than an error. `eam-abi-robustness` gets the order right and records why in a comment
-(``src/mcmc.py:270-272``); a function makes it impossible to get wrong.
+than an error. A function makes the correct order impossible to get wrong.
 
 Nothing here imports a sampler.
 """

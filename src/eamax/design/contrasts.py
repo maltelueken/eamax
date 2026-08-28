@@ -7,13 +7,13 @@ noise, threshold, the conflict pulse -- is one linear model in disguise:
 
     q[n, t] = sum_k  ( product of that term's contrast columns )  *  coefficient_k
 
-Writing the quantities this way collapses three things the previous engine special-cased.
+Writing quantities this way makes several modelling choices ordinary linear combinations.
 The average/difference split (`v = V + sgn * v_d / 2`) is `intercept()*V + match(0.5)*v_d`.
 Both within-trial noise conventions become linear: the "average" one is
 `intercept()*S + match(0.5)*s_d`, and the "mismatch" one -- pinning the non-target
-accumulator's noise to a constant -- is `constant(scale)*nontarget() + s_true*target()`,
-which needs no piecewise branch. The sum-to-zero per-accumulator threshold offsets are just
-deviation coding over the accumulator index rather than over a condition level.
+accumulator's noise to a constant -- is `constant(scale)*nontarget() + s_true*target()`.
+The sum-to-zero per-accumulator threshold offsets are deviation coding over the accumulator
+index rather than over a condition level.
 
 Everything a contrast does is a JAX op on covariates -- selections are `jnp.where`, never a
 Python `if` on a traced value -- so a column keeps a static shape under `jit` and `vmap`.
@@ -112,8 +112,7 @@ def distractor(scale=1.0):
 
     In a conflict task an irrelevant stimulus feature drives an early pulse on exactly one
     accumulator (see :mod:`eamax.accumulators.pulse`). ``term(amp, distractor())`` routes the
-    pulse amplitude there and leaves it zero everywhere else, so a pulsed-conflict model can
-    finally be expressed through the design layer rather than by hand-built parameter dicts.
+    pulse amplitude there and leaves it zero everywhere else.
     """
 
     def fn(accum, design):
@@ -127,8 +126,7 @@ def condition(level, scale=1.0):
 
     ``condition(1)`` is the reference level (congruent, or speed-instructed). A free
     condition effect is two indicators, ``term(Q_con, condition(1)) + term(Q_inc,
-    condition(0))``, which selects ``Q_con`` on reference trials and ``Q_inc`` on the rest --
-    the additive form of the old binary selection.
+    condition(0))``, which selects ``Q_con`` on reference trials and ``Q_inc`` on the rest.
     """
 
     def fn(accum, design):

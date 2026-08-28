@@ -1,8 +1,7 @@
 """Convergence and degeneracy diagnostics.
 
-Three numbers, each answering a question the source repositories ask in different places or
-not at all: has the chain converged, how much of the particle cloud is real, and how far
-from uniform are the weights.
+Three numbers, each answering one question: has the chain converged, how much of the
+particle cloud is real, and how far from uniform are the weights.
 """
 
 import jax
@@ -16,9 +15,7 @@ def rhat(positions, *, chain_axis=1, sample_axis=0):
 
     A thin wrapper over ``blackjax.diagnostics.rhat``, here so that convergence checking
     costs no dependency beyond the sampler. It computes the same statistic as
-    ``arviz.rhat(method="rank")`` -- verified to six decimals against ``arviz_stats.rhat``
-    on both a converged and a deliberately non-converged set of 4 x 2000 chains -- so a
-    consumer switching to it keeps the numbers it had.
+    ``arviz.rhat(method="rank")``.
 
     Defaults match :func:`eamax.inference.mcmc.inference_loop_multiple_chains`'s output
     layout, ``(draw, chain, param)``, rather than BlackJAX's own ``(chain, draw)``.
@@ -87,18 +84,13 @@ def count_unique_particles(particles):
 
     Method: project each particle onto a fixed random vector, sort by that projection, then
     compare *adjacent full rows* for exact equality. Comparing all pairs of full particles
-    would be ``O(N^2 D)`` and would allocate ~1 GB at ``N = 1000, D = 120``; sorting first is
-    ``O(N log N + N D)``.
+    would be ``O(N^2 D)`` and allocate far too much; sorting first is ``O(N log N + N D)``.
 
-    The full-row comparison is not redundant with the projection, and the version this was
-    ported from -- which counted changes in the sorted projections alone -- **overcounts**
-    without it. XLA accumulates the projection differently depending on a row's position in
-    the batch, so two bit-identical particles can come out one ULP apart: measured on a cloud
-    of 60 rows containing 20 exact duplicates, one duplicate pair projected to
-    0.5320762401923617 and 0.5320762401923615 and was counted twice. That is the unsafe
-    direction for this diagnostic -- it under-reports collapse, which is the only thing it
-    exists to find. Sorting by a projection that is merely *close* for identical rows still
-    places them adjacent, so the exact comparison recovers the true count.
+    The full-row comparison is not redundant with the projection. Counting changes in the
+    sorted projections alone would **overcount**, because two bit-identical particles can
+    project to values one ULP apart, so the diagnostic would under-report collapse -- the one
+    thing it exists to find. Sorting by a projection that is merely *close* for identical
+    rows still places them adjacent, so the exact comparison recovers the true count.
 
     Parameters
     ----------

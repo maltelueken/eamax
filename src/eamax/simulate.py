@@ -2,14 +2,14 @@
 
 `simulate_race` and `eamax.race.race_loglik` both go through `params_fn`, so a
 parameterization cannot drift between the model you simulate from and the model you fit.
-In the source repositories that consistency was asserted in a docstring and never tested;
-here it is structural, and `tests/test_simulate_roundtrip.py` checks it with a score test.
+The consistency is structural, and `tests/test_simulate_roundtrip.py` checks it with a
+score test.
 
 The guarantee is exactly as wide as one accumulator object: sampling and scoring agree
 because `Accumulator.sample` and `Accumulator.log_pdf_sf` describe the same distribution.
 Pairing a density from one source with a sampler from another -- a neural flow's `log_prob`
-against an Euler-Maruyama sampler, say -- is a choice the caller can still make, and is one
-the source repositories deliberately do make. `simulate_race` cannot detect it.
+against an Euler-Maruyama sampler, say -- is a choice the caller can still make, and
+`simulate_race` cannot detect it.
 """
 
 import jax.numpy as jnp

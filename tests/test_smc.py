@@ -2,8 +2,8 @@
 
 The target is a conjugate Gaussian, so the posterior mean, the posterior width **and the
 log marginal likelihood** are all known in closed form. That last one is the point: the
-evidence is the entire scientific output of one consumer repository and has never been
-checked against a known answer anywhere, while the other consumer discards it.
+evidence is often the headline scientific output, so it is checked here against a known
+answer.
 """
 
 import jax
@@ -87,7 +87,7 @@ def test_it_recovers_the_conjugate_posterior_width(result):
 
 
 def test_the_log_marginal_likelihood_matches_the_analytic_evidence(result):
-    """Never checked against a known answer in any source repository."""
+    """The SMC evidence estimate against the analytic evidence."""
     estimate = float(jnp.mean(result.log_marginal_likelihood))
 
     assert estimate == pytest.approx(analytic_log_evidence(), abs=0.2)

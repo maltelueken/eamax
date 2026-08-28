@@ -15,18 +15,11 @@ For decision time `t`, drift mean `v`, drift SD `s`, start-point range `A` and t
 both divided by `Phi(v/s)`, the probability that the truncated drift is positive -- i.e.
 that the accumulator terminates at all.
 
-Numerically the LBA is the mirror image of the Wald. The Wald's survival underflows
-exponentially and needed a hand-rolled stable form, but its density is fine; the LBA's
-truncated-normal drift leaves a heavy tail so `1 - F(t)` stays well conditioned in float64
-far out (~5.8e-6 at `t = 1e4`), while its *density* is a difference of nearly equal terms
-that underflows to exactly zero at small `t`.
-
-That underflow is why `lba_logpdf` carries a floor, unlike every other accumulator here.
-It is a *representability* floor, not a likelihood floor: the closed form has no value to
-report, and the only place that fact is known is here. It is distinct from the race's
-trial floor in `eamax.numerics`, and it does not touch the invalid-RT penalty -- so the
-"never re-clamp" rule that penalty depends on is unaffected. The constant is the same
-`1e-10` EMC2 floors its own race likelihood at, so floored rows agree with EMC2 exactly.
+The LBA's density is a difference of nearly equal terms that underflows to zero at small
+`t`, where the closed form simply has no value to report. That is why `lba_logpdf` carries
+a floor, unlike the other accumulators here: it marks the density as unrepresentable rather
+than acting as a likelihood floor, so it is distinct from the race's trial floor in
+`eamax.numerics` and does not touch the invalid-RT penalty.
 """
 
 import jax
@@ -112,9 +105,9 @@ class LBA:
     """Linear ballistic accumulator.
 
     Parameters are `v` (drift mean), `s` (drift SD), `A` (start-point range) and `b` (the
-    absolute threshold). Note `b`, not the threshold *gap*: consumers that parameterize by
+    absolute threshold). Note `b`, not the threshold *gap*: a model that parameterizes by
     the gap `B` -- keeping `b > A` true by construction and every parameter positive and
-    log-transformable -- should form `b = A + B` in their parameterization, which is where
+    log-transformable -- should form `b = A + B` in its parameterization, which is where
     that modelling choice belongs.
     """
 

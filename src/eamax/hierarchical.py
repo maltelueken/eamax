@@ -18,19 +18,16 @@ weak relative to the population spread and hurts where they are strong -- so the
 part of the model, and it is why parameter *order* matters: whichever parameters should be
 centered have to be last.
 
-`reconstruct_semicentered` is the reason most of this module exists. In the source
-repositories that four-line formula was written out verbatim in about six places -- both
-hierarchical simulators, the likelihood wrapper, the particle reconstruction, the
-post-processing, and a test's private copy -- and one of those docstrings noted that "all
-three must agree" back when there were only three. All six have to compute the same thing
-or the fit is silently wrong, so it is one function here.
+`reconstruct_semicentered` is the reason most of this module exists. Every place that turns
+the prior's components into per-subject parameters -- the simulators, the likelihood, the
+particle reconstruction, the post-processing -- has to compute the same formula or the fit
+is silently wrong, so it lives here once.
 
 `HierarchicalFlatSpace` is the other half. A sampler explores one flat real vector, so
 something has to own the map between that vector and the five-component dict -- along with
 the change-of-variables term, which `log_prob` here deliberately omits because it scores the
 *constrained* parameterization. Putting that with the prior rather than with a sampler is
-what lets `eamax.inference` stay ignorant of these component names, and it is the same
-argument `default_bijector` already makes: the keys are the prior's own business.
+what lets `eamax.inference` stay ignorant of these component names.
 
 TFP is imported lazily; see `eamax._tfp` for why it is not a declared dependency.
 """
@@ -41,14 +38,10 @@ from ._tfp import tfb, tfd
 
 DEFAULT_LKJ_CONCENTRATION = 2.0
 
-#: Tail index of the between-subject scales. `P(s > x) ~ x**-concentration`, so at the
-#: historically common value of 4 the tail is heavy enough that a rare population draws
-#: `s ~ 1` in log space, and hence subject parameters spanning orders of magnitude. For a
-#: neural likelihood that is outside the box the flow was trained on, where its log-density
-#: has gradient spikes and flat plateaus that collapse step-size adaptation. Lowering
-#: `inverse_gamma_scale` cannot fix it -- that shifts `s` down but leaves the tail index
-#: unchanged. Raising the concentration (and scaling the scale up to hold the median fixed)
-#: is what bounds the worst case.
+#: Tail index of the between-subject scales. `P(s > x) ~ x**-concentration`, so a small
+#: concentration lets a rare population draw a very large `s`, and hence subject parameters
+#: spanning orders of magnitude. A larger concentration (with the scale raised to hold the
+#: median fixed) keeps that worst case in check.
 DEFAULT_INVERSE_GAMMA_CONCENTRATION = 4.0
 
 
@@ -60,7 +53,7 @@ def cholesky_factor(s, psi_raw):
 def reconstruct_semicentered(mu, s, psi_raw, z, theta_bt):
     """Per-subject unconstrained parameters from the prior's five named components.
 
-    The single definition of a formula the source repositories wrote out six times.
+    The single definition of the semi-centered reconstruction.
 
     Parameters
     ----------
@@ -288,11 +281,6 @@ class HierarchicalLKJMVNPrior:
             ),
         }
 
-    def sample_subject_params(self, seed):
-        """One draw, reconstructed as `(mu, s, (S, P) per-subject parameters)`."""
-        params = self.sample(seed)
-        return params["mu"], params["s"], reconstruct_from_dict(params)
-
     def flat_space(self, bijector=None):
         """A :class:`HierarchicalFlatSpace` over this prior's coordinates."""
         return HierarchicalFlatSpace(self, bijector)
@@ -318,12 +306,8 @@ def joint_log_det_jacobian(bijector, unconstrained):
 
     Reducing each component with ``event_ndims`` equal to its own full rank makes every
     term a scalar before it is summed, which is correct for any `JointMap` regardless of
-    its components' shapes.
-
-    The two source repositories work around the same problem by hand-writing the two
-    non-trivial terms and naming the prior's components inline. That is right for
-    :func:`default_bijector` and silently wrong for any other, which is why this is
-    written generically and lives with the prior rather than with a sampler.
+    its components' shapes -- so this is written generically and lives with the prior rather
+    than being hand-written for one particular set of components.
 
     Parameters
     ----------
@@ -429,9 +413,8 @@ class HierarchicalFlatSpace:
     def subject_params(self, flat):
         """Per-subject unconstrained parameters, shape ``(S, P)``.
 
-        The semi-centered reconstruction, reached from flat coordinates. This is the
-        formula the source repositories wrote out six times and then four more times inside
-        their samplers; see :func:`reconstruct_semicentered`.
+        The semi-centered reconstruction, reached from flat coordinates; see
+        :func:`reconstruct_semicentered`.
         """
         return reconstruct_from_dict(self.forward(flat))
 

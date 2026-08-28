@@ -1,21 +1,19 @@
 """Ready-made parameterizations, as thin presets over the contrast engine.
 
-Two families of models the source repositories use, expressed once. The parameter *names*
-these emit -- ``v_intercept``, ``v_slope``, ``s_true``, ``b``, ``b_diff``, ``A``, ``B``,
-``t0`` for the two-accumulator specs, and the ``V``/``v_d``/``B``/``b_d``/``S``/``s_d``/``c_*``
-layout for the effects specs -- are load-bearing downstream: they are Hydra config keys, MCMC
-parameter-name contracts, neural-network inference-variable names and the coordinate labels
-inside saved posterior artifacts. The presets keep them exactly, and express the model
-declaratively through :mod:`eamax.design.contrasts` rather than through a hand-written map.
+Two families of models, expressed once. The parameter *names* these emit -- ``v_intercept``,
+``v_slope``, ``s_true``, ``b``, ``b_diff``, ``A``, ``B``, ``t0`` for the two-accumulator
+specs, and the ``V``/``v_d``/``B``/``b_d``/``S``/``s_d``/``c_*`` layout for the effects specs
+-- are stable, so downstream config keys and saved coordinate labels stay fixed. The presets
+express each model declaratively through :mod:`eamax.design.contrasts` rather than through a
+hand-written map.
 
-Two facts that used to be spec-level flags are now just choices of contrast:
+Two facts are choices of contrast rather than flags:
 
 * The within-trial noise identification. The "average" convention frees the target-match
   difference around a fixed average, ``s = S*intercept + s_d*match(0.5)``. The "mismatch"
-  convention -- what ``s_true`` means in the two-accumulator repos -- pins the non-target
-  accumulator's noise to a constant and frees the target's:
-  ``s = constant(scale)*nontarget() + s_true*target()``. Both are linear; there is no
-  ``noise_reference`` field any more.
+  convention -- what ``s_true`` means -- pins the non-target accumulator's noise to a
+  constant and frees the target's: ``s = constant(scale)*nontarget() + s_true*target()``.
+  Both are linear.
 * The LBA threshold gap. ``b`` carries a ``transform`` reading the ``A`` quantity
   (``lambda q: q["A"] + q["b"]``), so the engine emits the absolute boundary ``A + B`` and
   ``b > A`` holds by construction.
@@ -32,14 +30,13 @@ def rdm_intercept_slope_spec(noise_scale=1.0):
 
     Accumulator drift is ``v_intercept`` for the non-target and ``v_intercept + v_slope`` for
     the target; the non-target's noise is pinned to ``noise_scale`` and the target's is the
-    free ``s_true`` (the "mismatch" identification). ``t0`` is last, which several call sites
-    depend on.
+    free ``s_true`` (the "mismatch" identification). ``t0`` is last, which downstream code
+    depends on.
 
     Parameters
     ----------
     noise_scale : float, optional
-        The non-target accumulator's within-trial noise, held fixed for identification. 1 in
-        both source repositories.
+        The non-target accumulator's within-trial noise, held fixed for identification.
 
     Returns
     -------
@@ -105,8 +102,9 @@ def lba_intercept_slope_spec(noise_scale=1.0):
     """The two-accumulator LBA as ``[v_intercept, v_slope, s_true, A, B, t0]``.
 
     ``A`` is the start-point range and ``B`` the threshold *gap*, so the absolute boundary is
-    ``A + B`` and ``b > A`` holds by construction -- the same trick :func:`sat_spec` uses for
-    the speed/accuracy threshold, applied to a different invariant.
+    ``A + B`` and ``b > A`` holds by construction -- the same trick
+    :func:`rdm_sat_spec` uses for the speed/accuracy threshold, applied to a different
+    invariant.
 
     Parameters
     ----------
@@ -279,9 +277,7 @@ def pulsed_conflict_spec(num_responses=2, *, fixed_noise=1.0):
     ``tau`` (the pulse's time constant) is shared. The within-trial noise is fixed to
     ``fixed_noise``.
 
-    This is what the previous engine could not express: it broadcast ``amp``/``tau`` to every
-    accumulator and never read the ``distractor`` covariate. Pair it with a pulsed
-    accumulator (:class:`eamax.accumulators.VolterraPulsedWald`,
+    Pair it with a pulsed accumulator (:class:`eamax.accumulators.VolterraPulsedWald`,
     :class:`eamax.accumulators.EulerMaruyamaPulsedWald`).
 
     Returns

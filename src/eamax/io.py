@@ -1,16 +1,15 @@
 """NetCDF readers and writers for posterior artifacts.
 
-Two schemas live here, not one. They are what the consumer repositories already write, and
-they have almost nothing in common:
+Two schemas live here, not one, because they have almost nothing in common:
 
-* **Dataset posteriors** (`eam-abi-robustness`) -- one ``theta`` variable with dims
+* **Dataset posteriors** -- one ``theta`` variable with dims
   ``(chain, draw, dataset, param)``, holding many independent fits of the *same* model to
   *different* simulated datasets. Amortized (NPE) draws go in the same layout with a single
-  chain, which is the point: one reader serves both sides of the comparison.
-* **Hierarchical posteriors** (`cognitive-control-comparison`) -- one variable per named
-  parameter with a ``subject`` dimension, plus population ``mu``/``sigma``, plus
-  ``observed_data`` and ``prior`` groups, plus the SMC log marginal likelihood in the
-  attributes. A single fit of one model to one real dataset.
+  chain, so one reader serves both sides of a comparison.
+* **Hierarchical posteriors** -- one variable per named parameter with a ``subject``
+  dimension, plus population ``mu``/``sigma``, plus ``observed_data`` and ``prior`` groups,
+  plus the SMC log marginal likelihood in the attributes. A single fit of one model to one
+  real dataset.
 
 Trying to make one schema serve both would mean a ``dataset`` axis of length 1 next to a
 ``subject`` axis, or per-parameter variables for a model whose parameters are only ever
@@ -19,19 +18,12 @@ handled as a block. So this module ships two writers over the shared array helpe
 reusable logic lives.
 
 **This module reads and writes. It does not analyse.** No function here computes a
-diagnostic, drops a fit on one, or thins. That is a boundary worth stating because the
-reader used to do all three: :func:`load_dataset_posterior` took a ``psrf_threshold`` and a
-``num_target_samples``, computed R-hat, dropped the datasets that failed it, and thinned
-what was left. Three things were wrong with that. The returned array's *shape*
-depended on a diagnostic, so a caller could not tell an empty result from a failed read. The
-threshold -- an analysis decision, and the one that defines a comparison set -- was a
-file-reading argument. And pooling the chains on the way out destroyed the axis R-hat is
-computed over, so the caller could not have checked the filter, or applied a different one,
-even if it wanted to.
+diagnostic, drops a fit on one, or thins. A reader that filtered would return an array whose
+*shape* depended on a threshold, hiding an analysis decision inside a file read, and pooling
+on the way out would destroy the axis R-hat is computed over.
 
-So the reader now hands back every draw of every chain, back-transformed and selected by
-name, and the caller composes the rest out of parts that are already public and already
-tested::
+So the reader hands back every draw of every chain, back-transformed and selected by name,
+and the caller composes the rest out of parts that are already public and already tested::
 
     theta = load_dataset_posterior(path, to_constrained=..., param_names=[...])
     is_converged = np.all(rhat(theta, chain_axis=0, sample_axis=1) < 1.01, axis=-1)

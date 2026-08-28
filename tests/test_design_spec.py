@@ -178,11 +178,11 @@ def test_effects_spec_matches_intercept_slope_on_drift_and_threshold():
 
 
 def test_the_two_conventions_pin_a_different_noise():
-    # Not a naming difference: `intercept_slope_spec` pins the *mismatching* accumulator's
-    # noise to 1 and frees the matching one, while the average/difference layout pins the
-    # *average* to 1 -- which leaves the mismatching accumulator at `1 - s_d/2`, not 1.
-    # This is a modelling choice that was made implicitly in the source repositories; making
-    # it explicit is the point of `noise_reference`.
+    # Not a naming difference: `rdm_intercept_slope_spec` pins the *mismatching*
+    # accumulator's noise to 1 and frees the matching one, while the average/difference
+    # layout pins the *average* to 1 -- which leaves the mismatching accumulator at
+    # `1 - s_d/2`, not 1. The two are genuinely different models, expressed as two choices of
+    # contrast rather than a flag.
     legacy = build_params_fn(rdm_intercept_slope_spec(), Wald())(
         jnp.log(jnp.array([1.0, 1.5, 1.2, 1.3, 0.3])), _design()
     )[0]

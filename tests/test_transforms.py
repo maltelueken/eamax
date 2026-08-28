@@ -1,9 +1,7 @@
 """Unconstraining transforms.
 
-Two things are worth pinning: that the transform is bit-identical to the one it replaces,
-and that its log-det-Jacobian agrees with its own forward map. The second could not be
-tested in the source repository, because the map and the Jacobian lived in different files
-and only a comment held them together.
+Two things are worth pinning: that the transform is bit-identical to a hand-written
+reference, and that its log-det-Jacobian agrees with its own forward map.
 """
 
 import jax
@@ -17,13 +15,13 @@ from eamax.inference.transforms import (
     simple_to_unconstrained,
 )
 
-# `[drift_slope_loc, threshold_scale]` from the study-2 models, then the subject block.
+# Two bounded hyperparameters, then the positive subject block.
 META_BOUNDS = ([0.5, 0.05], [2.5, 0.25])
 SUBJECT = [1.0, 2.0, 1.0, 1.0, 0.2]
 
 
 def _reference_to_unconstrained(lower, upper):
-    """`eam-abi-robustness/src/mcmc.py:55-74`, verbatim, as the migration reference."""
+    """Hand-written reference implementation of the unconstraining map."""
     bijectors = [tfb().Sigmoid(low=low, high=high) for low, high in zip(lower, upper, strict=True)]
 
     def to_unconstrained(position):
@@ -38,7 +36,7 @@ def _reference_to_unconstrained(lower, upper):
 
 
 def _reference_to_constrained(lower, upper):
-    """`eam-abi-robustness/src/mcmc.py:77-89`, verbatim."""
+    """Hand-written reference implementation of the constraining map."""
     bijectors = [tfb().Sigmoid(low=low, high=high) for low, high in zip(lower, upper, strict=True)]
 
     def to_constrained(position):
@@ -81,8 +79,8 @@ def test_the_all_positive_case_is_bit_identical_to_log_and_exp(natural):
 
 
 def test_a_one_bound_transform_generalizes_the_two_bound_one():
-    # The study-3 models have a single bounded hyperparameter, the study-2 models two.
-    # One class, not two factories.
+    # A model may have one bounded hyperparameter or several; one class handles both,
+    # rather than a separate factory per count.
     one = BlockTransform([0.02], [0.18])
     position = jnp.asarray([0.1, *SUBJECT])
 
@@ -109,8 +107,7 @@ def test_extreme_unconstrained_values_stay_within_the_bounds(meta):
     """Whatever the sampler proposes, a bounded hyperparameter lands in its support.
 
     Closed interval, not open: at ``|y| = 40`` the sigmoid saturates to the bound exactly
-    in float64. The source repository's own version of this test asserts the same closed
-    interval for the same reason.
+    in float64.
     """
     lower, upper = META_BOUNDS
     natural = meta.forward(jnp.asarray([-40.0, 40.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
@@ -138,10 +135,10 @@ def test_it_vectorizes_over_leading_axes(meta, natural):
 # The Jacobian
 # --------------------------------------------------------------------------- #
 def test_the_jacobian_matches_an_autodiff_determinant(meta, natural):
-    """The check the source repository could not make.
+    """The forward map and its log-det-Jacobian must agree.
 
-    Its forward map lives in `mcmc.py` and its Jacobian inside each of eight log-density
-    factories; nothing compared them, and a comment warned that they must stay in step.
+    Because one object owns both, they can be checked against each other -- here against an
+    autodiff determinant of the forward map.
     """
     unconstrained = meta.inverse(natural)
     _, log_det = jnp.linalg.slogdet(jax.jacfwd(meta.forward)(unconstrained))

@@ -3,14 +3,8 @@
 A sampler explores unconstrained real space; a model's parameters are positive, or bounded
 on both sides. Something has to map between them, and something has to supply the matching
 log-det-Jacobian so the density is a density in the coordinates being explored.
-
-In `eam-abi-robustness` those are two different somethings. `src/mcmc.py` builds the
-forward and inverse maps -- used for the initial position and for reading samples back --
-while each of the eight `make_*_logdensity` factories re-implements the forward map *and*
-the Jacobian inline, because only the factories need the Jacobian. The two copies are kept
-in step by a comment warning that applying `exp` to a Sigmoid-transformed hyperparameter
-"silently produces plausible-looking nonsense". One object with three methods retires the
-comment.
+:class:`BlockTransform` is one object owning the forward map, its inverse, and the Jacobian,
+so the three stay in step.
 
 The layout is the one the hierarchical models use: prior hyperparameters bounded on both
 sides come first and take a `Sigmoid`, the strictly positive subject-level parameters
@@ -29,8 +23,6 @@ class BlockTransform:
 
     Directions follow the TFP convention, the same one :func:`eamax.hierarchical.default_bijector`
     uses: :meth:`forward` goes unconstrained -> natural, :meth:`inverse` goes back.
-    `eam-abi-robustness` names these ``to_constrained`` and ``to_unconstrained``
-    respectively.
 
     Every method is vectorized over the trailing axis, so a whole
     ``(dataset, sample, param)`` block transforms in one call -- which is what the posterior
@@ -117,9 +109,6 @@ class BlockTransform:
     def log_det_jacobian(self, y):
         """Log determinant of :meth:`forward`'s Jacobian, summed over the parameter axis.
 
-        The piece that exists in `eam-abi-robustness` only inside the log-density factories,
-        and so was never checked against the forward map it has to agree with.
-
         Parameters
         ----------
         y : array
@@ -146,10 +135,8 @@ class BlockTransform:
         """Midpoints of the bounded block, shape ``(num_bounded,)``.
 
         A starting value for a bounded hyperparameter has to lie strictly inside its
-        support -- outside it, :meth:`inverse` returns NaN and the whole fit is wasted. The
-        hazard is real rather than theoretical: `eam-abi-robustness` has model variants that
-        narrow these bounds without touching the configured initial position, so deriving
-        the midpoint from the same bounds the transform uses is what keeps the two in step.
+        support -- outside it, :meth:`inverse` returns NaN and the whole fit is wasted.
+        Deriving the midpoint from the same bounds the transform uses keeps the two in step.
         """
         return jnp.asarray([0.5 * (low + high) for low, high in zip(self.lower, self.upper)])
 
