@@ -97,8 +97,8 @@ diagnostic cannot fail — it can report a clean R-hat even when every chain has
 single mode of a multimodal target.
 
 **Starting values are rejection-sampled into the support.** `t0` above the fastest observed
-response time puts a chain on the likelihood's penalty wall, where step-size adaptation
-cannot recover. Rejection rather than clipping, because a clip is a point mass — dispersion
+response time puts a chain on the likelihood's flat floor, where the gradient carries no
+information and step-size adaptation cannot recover. Rejection rather than clipping, because a clip is a point mass — dispersion
 destroyed in the one coordinate the constraint exists to protect.
 
 `T0Support.from_spec` locates `t0` by name via `Parameterization` and raises if it is absent
@@ -155,10 +155,9 @@ Diagnose while the chain axis is still there, mask the pooled array, then thin.
 ## Three design decisions worth knowing about
 
 **`t0` and the guards live in the race, not the accumulator.** The `t0` shift, the parameter
-floors, the density floor and the invalid-RT penalty all belong to the race. Accumulators
-return raw log-densities, so there is no intermediate for a caller to re-clamp — which would
-flatten the penalty to a constant and remove the gradient that pushes `t0` back into the
-valid region.
+floors and the density floor all belong to the race. Accumulators return raw log-densities,
+so there is no intermediate for a caller to re-clamp — which would floor each component
+separately and make the effective floor scale with the number of accumulators.
 
 **The likelihood floor applies once, to the trial total.** Flooring each density component
 separately makes the effective floor scale with the number of accumulators while inflating

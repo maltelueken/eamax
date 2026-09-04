@@ -13,9 +13,9 @@ Three things this module owns:
 
 * **Non-decision time.** `t0` is a race-level shift, not an accumulator property.
   Accumulators see decision times.
-* **All guard logic.** The floor, the invalid-RT penalty, NaN containment and the padding
-  mask apply once, here, to the assembled trial total. Callers get a finished number and
-  no intermediate to re-clamp -- see `eamax.numerics` for why that matters.
+* **All guard logic.** The floor, NaN containment and the padding mask apply once, here,
+  to the assembled trial total. Callers get a finished number and no intermediate to
+  re-clamp -- see `eamax.numerics` for why that matters.
 * **Right-censoring.** Trials that never crossed have to be handled on *both* sides of the
   accumulator call: the evaluation time is substituted before, and the trial's score is
   replaced after. That is why `race_loglik` takes a closure rather than arrays.
@@ -71,7 +71,7 @@ def censored_eval_rt(rt, t0, t_max):
         Response times with the sentinel redirected onto ``t_max + t0``.
     is_censored : array or None
         Boolean, shape ``(T,)``, or ``None`` when ``t_max`` is ``None`` -- in which case a
-        negative RT is simply an invalid trial and takes the penalty.
+        negative RT is simply an infeasible trial and comes out at the floor.
     """
     if t_max is None:
         return rt, None
@@ -129,7 +129,6 @@ def overlay_by_mask(mask, alternative, base):
 
 
 def race_from_arrays(
-    rt_shifted,
     response,
     log_pdf,
     log_sf,
@@ -138,7 +137,6 @@ def race_from_arrays(
     is_censored=None,
     first_response=0,
     min_p=MIN_P,
-    min_rt=MIN_RT,
 ):
     """Assemble a per-trial log-likelihood from per-accumulator densities.
 
@@ -148,9 +146,6 @@ def race_from_arrays(
 
     Parameters
     ----------
-    rt_shifted : array
-        Decision time ``rt - t0``, raw and unclamped -- its sign is what marks a trial
-        invalid.
     response : array
         Winning accumulator per trial, shape ``(T,)``.
     log_pdf, log_sf : array
@@ -184,7 +179,7 @@ def race_from_arrays(
         # This is `sum(log_sf)` for any N, which is why censoring needs no routing.
         total = jnp.where(is_censored, jnp.sum(log_sf, axis=0), total)
 
-    out = finalize_trial_logp(rt_shifted, total, min_p, min_rt)
+    out = finalize_trial_logp(total, min_p)
 
     if mask is not None:
         out = jnp.where(mask, out, 0.0)
@@ -212,7 +207,7 @@ def race_loglik(
     ----------
     rt : array
         Observed response times, shape ``(T,)``. Negative marks a non-crossing trial, which
-        is treated as right-censored when ``t_max`` is given and as invalid otherwise.
+        is treated as right-censored when ``t_max`` is given and as infeasible otherwise.
     response : array
         Winning accumulator per trial, shape ``(T,)``.
     t0 : float or array
@@ -237,13 +232,11 @@ def race_loglik(
     rt = jnp.asarray(rt)
     rt_eval, is_censored = censored_eval_rt(rt, t0, t_max)
 
-    rt_shifted = rt_eval - t0
-    decision_time = jnp.maximum(rt_shifted, min_rt)
+    decision_time = jnp.maximum(rt_eval - t0, min_rt)
 
     log_pdf, log_sf = pdf_sf_fn(decision_time)
 
     return race_from_arrays(
-        rt_shifted,
         response,
         log_pdf,
         log_sf,
@@ -251,5 +244,4 @@ def race_loglik(
         is_censored=is_censored,
         first_response=first_response,
         min_p=min_p,
-        min_rt=min_rt,
     )

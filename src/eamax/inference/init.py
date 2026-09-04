@@ -7,11 +7,11 @@ A starting rule is three independent choices:
 This module supplies all three, so the choice is explicit.
 
 **The constraint.** For a race model the likelihood is undefined at ``t0 >= min(rt)``, and
-`eamax.race` covers that region with a steep penalty whose whole purpose is to push `t0`
-back down. A chain that *starts* there starts against a wall: window adaptation sees
-divergence after divergence and its only response is to shrink the step size, which does not
-help, because the wall is not a curvature scale. Dispersion has to be support-aware to be
-worth anything.
+`eamax.race` scores every trial in that region at the floor. The floor is flat, so a chain
+that *starts* there starts on a plateau: the gradient says nothing about which way `t0`
+should move, and window adaptation cannot help, because flatness is not a curvature scale.
+Nothing in the likelihood pushes such a chain back down. Dispersion has to be support-aware
+to be worth anything.
 
 **Rejection, not clipping.** Capping the offending coordinate looks cheaper and is worse: a
 cap is a point mass, and it lands in the one coordinate the routine exists to keep dispersed.
@@ -321,8 +321,8 @@ def init_particles_from_prior(flat_space, num_particles, key, *, support=None,
     than on a raw component of the prior's dict, so it does not require ``t0`` to sit in any
     particular block.
 
-    The accepted region is where the posterior lives -- outside it the likelihood is a
-    penalty, not a density -- so restricting the cloud costs no posterior mass. It is
+    The accepted region is where the posterior lives -- outside it the likelihood is the
+    floor, not a density -- so restricting the cloud costs no posterior mass. It is
     nonetheless **not** the prior, and that matters: tempered SMC weights increments by the
     likelihood alone and never corrects the initial distribution. Store it as an
     initialisation artefact, not under a ``prior`` group, or anything measuring posterior
@@ -505,7 +505,7 @@ def jitter_positions(position, num_chains, key, *, scale=0.1, support=None,
     give R-hat something to measure, which a replicated position is not.
 
     ``support`` is not really optional: undirected jitter easily lands a chain on the
-    likelihood's penalty wall, so omitting it while jittering warns.
+    likelihood's flat floor, so omitting it while jittering warns.
 
     Parameters
     ----------
@@ -530,8 +530,9 @@ def jitter_positions(position, num_chains, key, *, scale=0.1, support=None,
     if support is None and scale:
         warnings.warn(
             "Jittering without a support constraint: a start with t0 above the fastest "
-            "response time lands on the likelihood's penalty region, where step-size "
-            "adaptation cannot recover. Pass `support=T0Support.from_spec(...)`.",
+            "response time lands on the likelihood's flat floor, where the gradient carries "
+            "no information and step-size adaptation cannot recover. Pass "
+            "`support=T0Support.from_spec(...)`.",
             stacklevel=2,
         )
 

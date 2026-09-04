@@ -19,7 +19,7 @@ The LBA's density is a difference of nearly equal terms that underflows to zero 
 `t`, where the closed form simply has no value to report. That is why `lba_logpdf` carries
 a floor, unlike the other accumulators here: it marks the density as unrepresentable rather
 than acting as a likelihood floor, so it is distinct from the race's trial floor in
-`eamax.numerics` and does not touch the invalid-RT penalty.
+`eamax.numerics`.
 """
 
 import jax

@@ -1,9 +1,9 @@
 """Starting values.
 
 The constraint these tests are about is not a nicety. A chain started at ``t0 >= min(rt)``
-begins on the race likelihood's penalty region, where the gradient is order 1e3 and step
-size adaptation has nothing useful to do. One of the four source routines enforces this by
-assignment, two by rejection, and one not at all.
+begins on the race likelihood's floor, which is flat: the gradient carries no information
+about which way to move and step size adaptation has nothing useful to do. One of the four
+source routines enforces this by assignment, two by rejection, and one not at all.
 """
 
 import jax

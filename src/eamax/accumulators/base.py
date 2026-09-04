@@ -6,8 +6,8 @@ about non-decision time, about racing, about which accumulator won, or about how
 trial has to be before it gets floored. All of that belongs to `eamax.race`.
 
 That split keeps the guards in one place. Accumulators return raw log-densities, and the
-race applies the floor, the penalty and NaN containment once at the end, so there is no
-intermediate for a caller to re-clamp by mistake.
+race applies the floor and NaN containment once at the end, so there is no intermediate
+for a caller to re-clamp by mistake.
 
 Parameters travel as a dict keyed by `param_names` rather than as positional arguments,
 so a parameterization can be checked against an accumulator once, at construction, and so
@@ -45,8 +45,8 @@ class Accumulator(Protocol):
         Returns
         -------
         log_pdf, log_sf : array
-            Raw. Not floored, not penalised, not NaN-contained -- :mod:`eamax.race` does
-            all three, once, on the assembled trial total.
+            Raw. Neither floored nor NaN-contained -- :mod:`eamax.race` does both, once, on
+            the assembled trial total.
         """
         ...
 
