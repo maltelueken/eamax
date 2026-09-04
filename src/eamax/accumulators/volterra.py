@@ -83,7 +83,7 @@ def solve_volterra_fpt(v, amp, tau, s, b, dt, num_steps, a_shape=DEFAULT_SHAPE):
 class VolterraPulsedWald:
     """Reference density for a pulsed accumulator, by numerical solution of Fortet's equation.
 
-    Density only -- pair it with `EulerMaruyamaPulsedWald` to sample. Deliberately a
+    Density only -- pair it with `SimulatedPulsedWald` to sample. Deliberately a
     separate class from a flow-based density rather than a "backend" of one: this is a
     deterministic solver with static discretisation knobs, a flow is a learned pytree passed
     by identity, and behind one constructor their static-argument requirements conflict.

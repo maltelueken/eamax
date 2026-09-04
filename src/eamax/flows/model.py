@@ -153,7 +153,7 @@ class FlowAccumulator:
     """An `eamax` accumulator whose density comes from a trained conditional flow.
 
     Density only: pair it with a simulator for the same model -- typically
-    `EulerMaruyamaPulsedWald` -- and note that doing so gives up the "one object, one
+    `SimulatedPulsedWald` -- and note that doing so gives up the "one object, one
     distribution" guarantee `eamax.simulate` otherwise provides, since draws and densities
     then come from different implementations.
 

@@ -1,9 +1,17 @@
-"""Euler-Maruyama sampling for accumulators whose drift varies over time.
+"""Grid sampling for accumulators whose drift varies over time.
 
 A pulsed accumulator has no closed-form first-passage density, so it is simulated by
-integrating `dx = v(t) dt + s dW` on a fixed grid and testing for boundary crossings.
+walking `dx = v(t) dt + s dW` down a fixed grid and testing for boundary crossings.
 
-Two corrections make the discretisation far more accurate than a naive grid test:
+The noise is additive and constant, so the path splits into a deterministic mean and a
+scaled Brownian motion, `x(t) = M(t) + s W(t)`. When the integrated drift `M` is known in
+closed form -- as it is for the conflict pulse -- the grid values of `x` are drawn from
+their *exact* joint law and Euler-Maruyama's `O(dt)` drift error never arises.
+`first_passage_from_mean` takes that mean path directly; `first_passage_euler_maruyama`
+wraps it with a Riemann sum for drifts whose integral is not available.
+
+What remains discretised is the crossing test, and two corrections make it far more
+accurate than a naive one:
 
 * **Brownian bridge.** Between two grid points that both sit below the boundary, the path
   may still have crossed. Conditional on its endpoints the increment is a Brownian bridge,
@@ -18,7 +26,7 @@ A non-crossing accumulator returns `inf`, not a negative sentinel. That is what 
 race take a plain `min` over accumulators and read an all-`inf` trial as right-censored,
 with no special case.
 
-Memory is the binding constraint: the drift grid alone is `size * num_steps` floats, and
+Memory is the binding constraint: the mean path alone is `size * num_steps` floats, and
 the crossing test needs several arrays that shape. `chunk_size` bounds peak memory by
 mapping over slices instead, trading a little speed for a smaller footprint.
 """
@@ -29,18 +37,20 @@ import numpy as np
 
 from ..batching import map_in_chunks
 from ..numerics import MIN_P, guard_positive
-from .pulse import DEFAULT_SHAPE, normalized_gamma_derivative, num_steps_for, time_grid
+from .pulse import DEFAULT_SHAPE, integrated_drift, num_steps_for, time_grid
 
 
-def first_passage_euler_maruyama(key, drift, s, b, dt):
-    """First-passage times of independent diffusions with time-varying drift.
+def first_passage_from_mean(key, mean, s, b, dt):
+    """First-passage times of diffusions with additive noise about a known mean path.
 
     Parameters
     ----------
     key : jax.Array
         PRNG key.
-    drift : array
-        Drift rate on the grid, shape ``(..., num_steps)``.
+    mean : array
+        Mean position `M(t)` on the grid, shape ``(..., num_steps)``. The path is
+        ``M(t) + s W(t)``, so this is the accumulator's displacement in the absence of
+        noise -- an *integrated* drift, not a rate.
     s : array
         Within-trial noise, shape ``(...)`` or broadcastable.
     b : array
@@ -54,13 +64,15 @@ def first_passage_euler_maruyama(key, drift, s, b, dt):
         First-passage times, shape ``(...)``, with ``inf`` where the boundary was never
         reached.
     """
-    s = jnp.broadcast_to(jnp.asarray(s)[..., None], drift.shape)
-    b = jnp.broadcast_to(jnp.asarray(b)[..., None], drift.shape)
+    s = jnp.broadcast_to(jnp.asarray(s)[..., None], mean.shape)
+    b = jnp.broadcast_to(jnp.asarray(b)[..., None], mean.shape)
 
     key_noise, key_bridge, key_time = jax.random.split(key, 3)
 
-    increments = drift * dt + s * jax.random.normal(key_noise, drift.shape) * jnp.sqrt(dt)
-    x = jnp.cumsum(increments, axis=-1)
+    # Exact at the grid points: the increments of `s W` are iid normal, and `mean` carries
+    # the whole drift contribution with no quadrature error of its own.
+    noise = jnp.cumsum(jax.random.normal(key_noise, mean.shape) * jnp.sqrt(dt), axis=-1)
+    x = mean + s * noise
     x_prev = jnp.concatenate([jnp.zeros_like(x[..., :1]), x[..., :-1]], axis=-1)
 
     crossing = x >= b
@@ -76,8 +88,41 @@ def first_passage_euler_maruyama(key, drift, s, b, dt):
     return jnp.where(crossed, (first_index + offset) * dt, jnp.inf)
 
 
-class EulerMaruyamaPulsedWald:
-    """A diffusion whose drift carries a conflict pulse, sampled by Euler-Maruyama.
+def first_passage_euler_maruyama(key, drift, s, b, dt):
+    """First-passage times of independent diffusions with time-varying drift.
+
+    Euler-Maruyama: the mean path is accumulated as `cumsum(drift * dt)`, a Riemann sum
+    carrying an `O(dt)` error. Prefer :func:`first_passage_from_mean` whenever the drift's
+    integral is available in closed form -- for the conflict pulse it is, so
+    :class:`SimulatedPulsedWald` uses that instead.
+
+    Parameters
+    ----------
+    key : jax.Array
+        PRNG key.
+    drift : array
+        Drift *rate* on the grid, shape ``(..., num_steps)``.
+    s : array
+        Within-trial noise, shape ``(...)`` or broadcastable.
+    b : array
+        Absorbing boundary, shape ``(...)`` or broadcastable.
+    dt : float
+        Grid step.
+
+    Returns
+    -------
+    array
+        First-passage times, shape ``(...)``, with ``inf`` where the boundary was never
+        reached.
+    """
+    return first_passage_from_mean(key, jnp.cumsum(drift * dt, axis=-1), s, b, dt)
+
+
+class SimulatedPulsedWald:
+    """A diffusion whose drift carries a conflict pulse, sampled on a fixed grid.
+
+    The pulse's integrated drift is known in closed form, so the grid values of the path
+    are exact and only the crossing test is discretised.
 
     Sampling only: this class has no `log_pdf_sf`, because the model it samples from has no
     closed-form density. Pair it with `VolterraPulsedWald` for a numerical reference density
@@ -88,7 +133,8 @@ class EulerMaruyamaPulsedWald:
     Parameters
     ----------
     dt : float
-        Integration step. Smaller is more accurate and proportionally more expensive.
+        Grid step. Smaller resolves the crossing test more finely and is proportionally
+        more expensive.
     t_max : float
         Simulation horizon. Accumulators still running at ``t_max`` return ``inf``, and the
         race reads an all-``inf`` trial as right-censored -- so this must match the
@@ -112,8 +158,8 @@ class EulerMaruyamaPulsedWald:
         self.chunk_size = chunk_size
         self.num_steps = num_steps_for(dt, t_max)
 
-    def drift_grid(self, params):
-        """Total drift: the constant rate plus the pulse.
+    def mean_grid(self, params):
+        """Mean position `M(t)`: the constant drift's ramp plus the integrated pulse.
 
         Returns
         -------
@@ -124,12 +170,12 @@ class EulerMaruyamaPulsedWald:
         v = jnp.asarray(params["v"])[..., None]
         amp = jnp.asarray(params["amp"])[..., None]
         tau = guard_positive(jnp.asarray(params["tau"]), self.min_param)[..., None]
-        return v + normalized_gamma_derivative(t, amp, tau, self.a_shape)
+        return integrated_drift(t, v, amp, tau, self.a_shape)
 
     def _sample_flat(self, key, params):
-        return first_passage_euler_maruyama(
+        return first_passage_from_mean(
             key,
-            self.drift_grid(params),
+            self.mean_grid(params),
             guard_positive(params["s"], self.min_param),
             guard_positive(params["b"], self.min_param),
             self.dt,
@@ -146,6 +192,6 @@ class EulerMaruyamaPulsedWald:
 
     def __repr__(self):
         return (
-            f"EulerMaruyamaPulsedWald(dt={self.dt!r}, t_max={self.t_max!r}, "
+            f"SimulatedPulsedWald(dt={self.dt!r}, t_max={self.t_max!r}, "
             f"chunk_size={self.chunk_size!r})"
         )

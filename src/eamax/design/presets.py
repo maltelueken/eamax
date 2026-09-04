@@ -278,7 +278,7 @@ def pulsed_conflict_spec(num_responses=2, *, fixed_noise=1.0):
     ``fixed_noise``.
 
     Pair it with a pulsed accumulator (:class:`eamax.accumulators.VolterraPulsedWald`,
-    :class:`eamax.accumulators.EulerMaruyamaPulsedWald`).
+    :class:`eamax.accumulators.SimulatedPulsedWald`).
 
     Returns
     -------

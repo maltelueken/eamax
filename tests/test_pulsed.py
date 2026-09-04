@@ -1,4 +1,4 @@
-"""The conflict pulse, its numerical density, and its Euler-Maruyama sampler."""
+"""The conflict pulse, its numerical density, and its grid sampler."""
 
 import jax
 import jax.numpy as jnp
@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from eamax.accumulators import (
-    EulerMaruyamaPulsedWald,
+    SimulatedPulsedWald,
     VolterraPulsedWald,
     Wald,
     normalized_gamma,
@@ -99,7 +99,7 @@ def test_volterra_density_integrates_to_the_survival_it_reports():
     assert np.all(np.diff(np.array(log_sf)) < 0)
 
 
-def test_euler_maruyama_reproduces_the_wald_when_the_pulse_vanishes():
+def test_the_grid_sampler_reproduces_the_wald_when_the_pulse_vanishes():
     # Ties the SDE sampler to the analytic accumulator it generalises: with no pulse, the
     # simulated first-passage distribution must match the inverse Gaussian.
     n = 20_000
@@ -110,7 +110,7 @@ def test_euler_maruyama_reproduces_the_wald_when_the_pulse_vanishes():
         "s": jnp.ones((n,)),
         "b": jnp.full((n,), 1.0),
     }
-    draws = np.array(EulerMaruyamaPulsedWald(dt=0.001, t_max=5.0, chunk_size=4000).sample(jax.random.key(0), params))
+    draws = np.array(SimulatedPulsedWald(dt=0.001, t_max=5.0, chunk_size=4000).sample(jax.random.key(0), params))
     finite = draws[np.isfinite(draws)]
     assert finite.size > 0.99 * n
 
@@ -132,7 +132,7 @@ def test_non_crossing_accumulators_return_inf_not_a_negative_sentinel():
         "s": jnp.array([1e-6]),
         "b": jnp.array([100.0]),
     }
-    draws = np.array(EulerMaruyamaPulsedWald(dt=0.01, t_max=1.0).sample(jax.random.key(0), params))
+    draws = np.array(SimulatedPulsedWald(dt=0.01, t_max=1.0).sample(jax.random.key(0), params))
     assert np.all(np.isinf(draws))
 
 
@@ -148,8 +148,8 @@ def test_the_brownian_bridge_recovers_fast_crossings_a_grid_test_drops():
         "s": jnp.ones((n,)),
         "b": jnp.full((n,), 1.0),
     }
-    coarse = np.array(EulerMaruyamaPulsedWald(dt=0.01, t_max=5.0, chunk_size=4000).sample(jax.random.key(4), params))
-    fine = np.array(EulerMaruyamaPulsedWald(dt=0.0005, t_max=5.0, chunk_size=2000).sample(jax.random.key(4), params))
+    coarse = np.array(SimulatedPulsedWald(dt=0.01, t_max=5.0, chunk_size=4000).sample(jax.random.key(4), params))
+    fine = np.array(SimulatedPulsedWald(dt=0.0005, t_max=5.0, chunk_size=2000).sample(jax.random.key(4), params))
     coarse, fine = coarse[np.isfinite(coarse)], fine[np.isfinite(fine)]
     assert abs(coarse.mean() - fine.mean()) < 0.01
 
@@ -162,7 +162,7 @@ def test_the_pulse_shifts_response_times_earlier():
         "s": jnp.ones((n,)),
         "b": jnp.full((n,), 1.0),
     }
-    sampler = EulerMaruyamaPulsedWald(dt=0.001, t_max=5.0, chunk_size=4000)
+    sampler = SimulatedPulsedWald(dt=0.001, t_max=5.0, chunk_size=4000)
     without = np.array(sampler.sample(jax.random.key(5), {**base, "amp": jnp.zeros((n,))}))
     with_pulse = np.array(sampler.sample(jax.random.key(5), {**base, "amp": jnp.full((n,), 0.3)}))
     assert np.nanmean(with_pulse[np.isfinite(with_pulse)]) < np.nanmean(without[np.isfinite(without)])
