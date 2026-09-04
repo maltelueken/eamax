@@ -61,7 +61,8 @@ def inference_loop_multiple_chains(key, kernel, initial_state, num_samples, num_
         ``acceptance_rate``, ``num_integration_steps`` for NUTS.
     """
 
-    @jax.jit
+    # Not jitted: `lax.scan` stages the body out itself; see the note in
+    # `eamax.inference.smc.smc_inference_loop`.
     def one_step(states, step_key):
         keys = jax.random.split(step_key, num_chains)
         if kernel_params is None:

@@ -44,10 +44,10 @@ inference = ["blackjax>=1.2.5"]
 # `eamax.io` only -- reading and writing NetCDF posterior artifacts. Kept out of
 # `inference` because sampling and diagnostics need none of it: `arviz-stats` is
 # deliberately absent, since `eamax.inference.diagnostics.rhat` reproduces
-# `arviz_stats.rhat` to six decimals from blackjax alone. blackjax is listed because
-# `load_dataset_posterior` filters on that R-hat, so the loader needs it even though
-# neither writer does.
-io = ["arviz-base", "xarray", "h5netcdf", "h5py", "blackjax>=1.6"]
+# `arviz_stats.rhat` to six decimals from blackjax alone. No blackjax either: the module
+# reads and writes and does not analyse, so nothing in it computes an R-hat -- a caller who
+# wants one composes `eamax.inference.diagnostics.rhat` itself, under the `inference` extra.
+io = ["arviz-base", "xarray", "h5netcdf", "h5py"]
 
 [dependency-groups]
 dev = ["pytest", "scipy", "pandas", "blackjax>=1.6", "arviz-base", "arviz-stats", "xarray", "h5netcdf", "h5py"]

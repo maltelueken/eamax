@@ -336,6 +336,10 @@ def save_hierarchical_posterior(
 
     groups = {
         "posterior": posterior_ds,
+        # `SMCResult.weights` always belongs to `SMCResult.particles`, so `weight` and the
+        # posterior draws stored beside it describe the same cloud: uniform after the
+        # default final resample, the SMC weights themselves when it was skipped. A
+        # consumer can therefore weight the stored draws by it unconditionally.
         "sample_stats": azb.dict_to_dataset(
             {"weight": np.asarray(result.weights)}, sample_dims=["chain", "draw"]
         ),

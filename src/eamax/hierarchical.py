@@ -370,22 +370,62 @@ class HierarchicalFlatSpace:
 
         offset = 0
         slices = {}
+        shapes = {}
         for name in sorted(template):
             size = int(jnp.size(template[name]))
             slices[name] = slice(offset, offset + size)
+            shapes[name] = jnp.shape(template[name])
             offset += size
         self.component_slices = slices
+        self._component_shapes = shapes
 
     def unravel(self, flat):
         """Flat vector, shape ``(D,)``, to the unconstrained component dict."""
         return self._unravel(jnp.asarray(flat))
 
     def ravel(self, unconstrained):
-        """Unconstrained component dict to a flat vector, shape ``(D,)``."""
-        from jax.flatten_util import ravel_pytree
+        """Unconstrained component dict to a flat vector, shape ``(D,)``.
 
-        flat, _ = ravel_pytree(unconstrained)
-        return flat
+        Uses the layout fixed at construction rather than re-deriving one from the argument.
+        Re-deriving would accept a dict missing a component or carrying an extra key and
+        return a differently-sized vector, which :meth:`unravel` would go on to
+        *misinterpret* rather than reject -- and it is on the hot path, once per particle in
+        :meth:`sample` and once per rejection attempt in
+        :func:`eamax.inference.init.init_particles_from_prior`.
+
+        Raises
+        ------
+        ValueError
+            If ``unconstrained``'s keys are not exactly the layout's components.
+        """
+        expected = set(self._component_shapes)
+        given = set(unconstrained)
+
+        if given != expected:
+            raise ValueError(
+                f"Components {sorted(given)} do not match this flat space's layout "
+                f"{sorted(expected)}; missing {sorted(expected - given)}, unexpected "
+                f"{sorted(given - expected)}."
+            )
+
+        return jnp.concatenate(
+            [jnp.ravel(jnp.asarray(unconstrained[name])) for name in sorted(expected)]
+        )
+
+    def centered_block(self, flat):
+        """The constrained centered block ``theta_bt`` of a flat vector, ``(S, P_bt)``.
+
+        Reads that one component's slice and applies that one component's bijector, which
+        is exact because the map is a ``JointMap`` -- each component is transformed
+        independently of the others. The block is also the trailing columns of
+        :meth:`subject_params` unchanged (see
+        :func:`reconstruct_semicentered`), so a constraint on a centered parameter can be
+        tested here without unravelling the whole vector or running the reconstruction.
+        """
+        flat = jnp.asarray(flat)
+        name = "theta_bt"
+        block = jnp.reshape(flat[self.component_slices[name]], self._component_shapes[name])
+        return self.bijector.bijectors[name].forward(block)
 
     def forward(self, flat):
         """Flat vector to the *constrained* component dict."""

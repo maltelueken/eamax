@@ -115,6 +115,20 @@ def test_thin_strides_rather_than_truncating():
     assert out[-1] >= 900
 
 
+def test_thin_strides_even_when_the_chain_is_barely_longer_than_the_target():
+    """The regime a floor-divided stride silently truncates in.
+
+    With `num_target <= n < 2 * num_target` a floored stride is 1, which keeps everything
+    and leaves the cap to cut the tail off -- so a 300-draw chain thinned to 200 comes back
+    as its first 200 draws. That is exactly the "represented by its first tenth" failure the
+    striding exists to prevent, and it is silent: the shape is right.
+    """
+    out = thin(np.arange(300).reshape(1, 300, 1), 200)[0, :, 0]
+
+    assert out[0] == 0
+    assert out[-1] >= 290
+
+
 def test_thin_uses_an_integer_stride():
     out = thin(np.arange(1000).reshape(1, 1000, 1), 100)[0, :, 0]
 

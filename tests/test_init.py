@@ -86,6 +86,28 @@ def test_it_returns_one_value_per_subject():
     assert jnp.allclose(min_valid_rt(rt), jnp.asarray([0.5, 0.4]))
 
 
+def test_a_subject_with_no_valid_observation_is_an_error():
+    """`inf` is the identity element of `min`, not an answer, and it propagates silently.
+
+    A subject whose trials all timed out -- or a fully padded row of a ragged batch -- has
+    no fastest response. Returning `inf` gives `T0Support.from_spec` an infinite cap, which
+    disables the constraint for exactly the subject whose data cannot support it, and
+    nothing downstream raises.
+    """
+    rt = jnp.asarray([[-1.0, -1.0], [0.5, 0.7]])
+
+    with pytest.raises(ValueError, match="No valid response time"):
+        min_valid_rt(rt)
+
+
+def test_masking_every_trial_of_a_subject_is_the_same_error():
+    rt = jnp.asarray([[0.9, 0.5], [0.4, 0.6]])
+    mask = jnp.asarray([[False, False], [True, True]])
+
+    with pytest.raises(ValueError, match="No valid response time"):
+        min_valid_rt(rt, mask=mask)
+
+
 # --------------------------------------------------------------------------- #
 # T0Support
 # --------------------------------------------------------------------------- #
@@ -147,6 +169,52 @@ def test_clipping_only_moves_the_breaching_entries(spec):
     assert not bool(support.violates(clipped))
 
 
+def test_clipping_a_single_vector_against_a_per_subject_cap(spec):
+    """`clip` takes every shape `violates` does, including the per-subject cap.
+
+    A shape-(S,) cap against one shape-(P,) vector is what `init_positions_from_prior`
+    passes when it is given the support `T0Support.from_spec` builds from a per-subject
+    `min_valid_rt`. There is one `t0` for every bound and `violates` clears it only against
+    all of them, so the clip has to respect the tightest.
+    """
+    support = T0Support.from_spec(spec, jnp.asarray([0.5, 0.4, 0.6]))
+    theta = jnp.asarray([0.1, 0.2, 0.3, 0.4, jnp.log(0.9)])
+
+    clipped = support.clip(theta)
+
+    assert clipped.shape == theta.shape
+    assert jnp.allclose(clipped[:-1], theta[:-1])
+    assert not bool(support.violates(clipped))
+
+
+def test_clipping_a_subject_block_moves_each_subject_to_its_own_cap(spec):
+    support = T0Support.from_spec(spec, jnp.asarray([0.5, 0.4, 0.6]))
+    index = spec.index("t0")
+    theta = jnp.zeros((3, spec.num_params)).at[:, index].set(jnp.log(0.9))
+
+    clipped = support.clip(theta)
+
+    assert not bool(support.violates(clipped))
+    assert jnp.allclose(clipped[:, index], jnp.log(0.97 * jnp.asarray([0.5, 0.4, 0.6])))
+
+
+def test_a_per_subject_cap_survives_the_prior_rejection_path(spec):
+    """The combination both `T0Support` and `init_positions_from_prior` document."""
+    support = T0Support.from_spec(spec, jnp.asarray([0.5, 0.4, 0.6]))
+
+    def sample_fn(key):
+        return jax.random.normal(key, (spec.num_params,)) * 0.5 + jnp.asarray(
+            [0.0, 0.7, 0.0, 0.0, jnp.log(0.2)]
+        )
+
+    positions, _ = init_positions_from_prior(
+        sample_fn, 4, jax.random.key(0), support=support
+    )
+
+    assert positions.shape == (4, spec.num_params)
+    assert not bool(jax.vmap(support.violates)(positions).any())
+
+
 # --------------------------------------------------------------------------- #
 # rejection_sample
 # --------------------------------------------------------------------------- #
@@ -171,6 +239,40 @@ def test_an_impossible_constraint_exhausts_and_repairs():
 
     assert int(exhausted) == 8
     assert jnp.all(draws <= 0.0)  # the fallback still satisfies the constraint
+
+
+def test_a_repair_touches_only_the_draws_that_gave_up():
+    """`repair_fn` is the exhaustion fallback, not a post-processing step.
+
+    Applying it to every draw would push the accepted ones through the projection too, so
+    what comes back is the source distribution *mapped*, not the source distribution
+    conditioned on the constraint -- which is the one property the module promises. A
+    repair that is not a no-op on satisfying draws makes the difference visible.
+    """
+    def sample_fn(key):
+        return jax.random.uniform(key, (), minval=-1.0, maxval=1.0)
+
+    draws, exhausted = rejection_sample(
+        sample_fn, lambda x: x > 0.0, 256, jax.random.key(0),
+        repair_fn=lambda x: jnp.full_like(x, -99.0),
+    )
+
+    assert int(exhausted) == 0
+    assert jnp.all(draws <= 0.0)
+    assert not jnp.any(draws == -99.0)
+
+
+def test_a_repair_still_fires_on_the_draws_that_did_give_up():
+    def sample_fn(key):
+        return jax.random.uniform(key, (), minval=1.0, maxval=2.0)
+
+    draws, exhausted = rejection_sample(
+        sample_fn, lambda x: x > 0.0, 8, jax.random.key(0),
+        max_attempts=2, repair_fn=lambda x: jnp.full_like(x, -99.0),
+    )
+
+    assert int(exhausted) == 8
+    assert jnp.all(draws == -99.0)
 
 
 def test_without_a_repair_an_exhausted_draw_comes_back_as_drawn():
@@ -233,25 +335,26 @@ def test_no_warning_when_nothing_is_jittered():
 # Fixed values
 # --------------------------------------------------------------------------- #
 def test_t0_is_taken_from_the_data_by_name_not_by_position(spec):
-    position = init_position_from_values(
+    position, num_exhausted = init_position_from_values(
         [1.0, 2.0, 1.0, 1.0, 99.0], spec=spec, min_rt=0.4, t0_fraction=0.5
     )
 
     assert float(position[spec.index("t0")]) == pytest.approx(0.2)
+    assert int(num_exhausted) == 0
 
 
 def test_a_leading_bounded_block_is_offset(spec):
     transform = BlockTransform([0.5], [2.5])
     values = [*transform.midpoint(), 1.0, 2.0, 1.0, 1.0, 99.0]
 
-    position = init_position_from_values(values, spec=spec, offset=1, min_rt=0.4)
+    position, _ = init_position_from_values(values, spec=spec, offset=1, min_rt=0.4)
 
     assert float(position[1 + spec.index("t0")]) == pytest.approx(0.2)
 
 
 def test_values_can_be_returned_unconstrained(spec):
     transform = BlockTransform()
-    position = init_position_from_values(
+    position, _ = init_position_from_values(
         [1.0, 2.0, 1.0, 1.0, 0.2], spec=spec, transform=transform
     )
 

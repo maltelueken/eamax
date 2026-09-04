@@ -62,12 +62,41 @@ def min_valid_rt(rt, *, mask=None, sentinel=0.0, axis=-1):
     -------
     array
         Scalar for a ``(T,)`` input, shape ``(S,)`` for ``(S, T)``.
+
+    Raises
+    ------
+    ValueError
+        If any subject has no valid observation at all -- every trial censored, or masked
+        out as padding. The minimum over an empty set is ``inf``, which is the identity
+        element of ``min`` rather than an answer, and it propagates silently: an infinite
+        ``log_t0_max`` in :meth:`T0Support.from_spec` disables the constraint for exactly
+        the subject whose data cannot support it. Checked only when ``rt`` is concrete;
+        under tracing there is nothing to inspect.
     """
     rt = jnp.asarray(rt)
     valid = rt > sentinel
     if mask is not None:
         valid = valid & jnp.asarray(mask)
-    return jnp.min(jnp.where(valid, rt, jnp.inf), axis=axis)
+
+    smallest = jnp.min(jnp.where(valid, rt, jnp.inf), axis=axis)
+
+    try:
+        empty = ~jnp.isfinite(smallest)
+        any_empty = bool(jnp.any(empty))
+    except jax.errors.TracerBoolConversionError:  # pragma: no cover - traced call
+        return smallest
+
+    if any_empty:
+        where = jnp.argwhere(jnp.atleast_1d(empty)).ravel().tolist()
+        raise ValueError(
+            f"No valid response time for {len(where)} of {jnp.atleast_1d(smallest).size} "
+            f"entries (index {where}): every trial is at or below the non-crossing sentinel "
+            f"{sentinel}, or masked out. The minimum of an empty set is inf, which would "
+            "silently disable the t0 support constraint for those subjects. Drop them, or "
+            "pass a min_rt of your own."
+        )
+
+    return smallest
 
 
 @dataclass(frozen=True)
@@ -132,6 +161,26 @@ class T0Support:
     def _values(self, theta):
         return jnp.asarray(theta)[..., self.index]
 
+    def _cap_for(self, values):
+        """``log_t0_max`` reduced to something that broadcasts against `values`.
+
+        A per-subject cap lines up entry by entry with the ``(S,)`` column of an ``(S, P)``
+        draw. Against a single ``(P,)`` vector there is one ``t0`` for every bound, and
+        :meth:`violates` treats that as breaching unless it clears them all, so the binding
+        bound -- the one a clip has to respect -- is the tightest.
+        """
+        cap = jnp.asarray(self.log_t0_max)
+        return jnp.min(cap) if cap.ndim > jnp.ndim(values) else cap
+
+    def violates_t0(self, t0):
+        """Does any of these unconstrained ``t0`` values breach the cap?
+
+        Split out from :meth:`violates` so a caller that already holds the ``t0`` column --
+        :func:`init_particles_from_prior` reads it straight off the centered block -- can
+        test it without reconstructing a whole parameter vector to index into.
+        """
+        return jnp.any(jnp.asarray(t0) > self.log_t0_max)
+
     def violates(self, theta):
         """Does any entry breach the cap?
 
@@ -147,16 +196,20 @@ class T0Support:
         array
             Scalar boolean.
         """
-        return jnp.any(self._values(theta) > self.log_t0_max)
+        return self.violates_t0(self._values(theta))
 
     def clip(self, theta):
         """Pin breaching entries to the cap.
 
         The exhaustion fallback, not a strategy -- see this module's docstring for what a
         cap does to dispersion when it binds often.
+
+        Accepts the same shapes as :meth:`violates`: a ``(P,)`` vector or an ``(S, P)``
+        block, against a scalar or per-subject cap.
         """
         theta = jnp.asarray(theta)
-        return theta.at[..., self.index].set(jnp.minimum(self._values(theta), self.log_t0_max))
+        values = self._values(theta)
+        return theta.at[..., self.index].set(jnp.minimum(values, self._cap_for(values)))
 
 
 def rejection_sample(sample_fn, violates_fn, num_draws, key, *,
@@ -176,9 +229,13 @@ def rejection_sample(sample_fn, violates_fn, num_draws, key, *,
     max_attempts : int, optional
         Redraws before giving up on one draw.
     repair_fn : callable, optional
-        ``f(pytree) -> pytree``, applied to a draw that gave up. When ``None`` an exhausted
-        draw is returned as drawn, which is the honest default -- not every constraint has
-        a sensible projection.
+        ``f(pytree) -> pytree``, applied to a draw that gave up, and *only* to such a draw:
+        it is evaluated on every draw so the selection stays traceable, but its result is
+        kept only where ``max_attempts`` ran out. That is what leaves the accepted draws
+        exactly the source distribution conditioned on the constraint, rather than the
+        source distribution pushed through a projection. When ``None`` an exhausted draw is
+        returned as drawn, which is the honest default -- not every constraint has a
+        sensible projection.
 
     Returns
     -------
@@ -206,7 +263,14 @@ def rejection_sample(sample_fn, violates_fn, num_draws, key, *,
 
         exhausted = violates_fn(sample)
         if repair_fn is not None:
-            sample = repair_fn(sample)
+            # `exhausted` is a traced scalar, so the repair cannot be branched on; select
+            # instead. Applying it unconditionally would push *every* accepted draw through
+            # the projection, which is exactly the point mass this module exists to avoid.
+            sample = jax.tree.map(
+                lambda repaired, drawn: jnp.where(exhausted, repaired, drawn),
+                repair_fn(sample),
+                sample,
+            )
         return sample, exhausted
 
     draws, exhausted = jax.vmap(draw_one)(jax.random.split(key, num_draws))
@@ -286,6 +350,15 @@ def init_particles_from_prior(flat_space, num_particles, key, *, support=None,
     num_ncp = flat_space.prior.num_params_ncp
 
     def violates(flat):
+        # The centered block passes through the reconstruction unchanged and sits in the
+        # trailing columns of the subject parameters, so when `t0` lives there the cap can be
+        # tested against that one column. Reading it off the flat vector skips a full
+        # unravel, the bijector forward (a `CorrelationCholesky` on a P x P factor among
+        # them) and the (S, P) reconstruction -- per attempt, inside a vmapped while_loop.
+        if support.index >= num_ncp:
+            return support.violates_t0(
+                flat_space.centered_block(flat)[:, support.index - num_ncp]
+            )
         return support.violates(flat_space.subject_params(flat))
 
     def repair(flat):
@@ -390,8 +463,13 @@ def init_position_from_values(values, *, spec=None, t0_index=None, offset=0, min
 
     Returns
     -------
-    array
+    position : array
         Shape ``(P,)``, natural scale unless ``transform`` is given.
+    num_exhausted : array
+        Always scalar 0. There is no rejection here -- nothing is drawn -- but every
+        builder in this module returns ``(positions, num_exhausted)``, and a lone builder
+        returning a bare array unpacks into the first two *coordinates* of the starting
+        vector for a caller following that pattern, silently and without raising.
 
     Raises
     ------
@@ -412,7 +490,10 @@ def init_position_from_values(values, *, spec=None, t0_index=None, offset=0, min
             t0_index = offset + spec.index("t0")
         position = position.at[t0_index].set(t0_fraction * jnp.asarray(min_rt))
 
-    return position if transform is None else transform.inverse(position)
+    if transform is not None:
+        position = transform.inverse(position)
+
+    return position, jnp.asarray(0)
 
 
 def jitter_positions(position, num_chains, key, *, scale=0.1, support=None,

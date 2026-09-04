@@ -121,11 +121,14 @@ def thin(samples, num_target, *, axis=1):
     Striding rather than truncating keeps the retained draws spread over the whole chain,
     so a slowly mixing chain is not represented by its first tenth.
 
-    ``num_target`` is an upper bound, not a promise. The stride is an integer, so the result
-    holds ``ceil(n / stride)`` draws capped at ``num_target``; with ``n = 300`` and
-    ``num_target = 200`` the stride is 1 and 200 come back, but with ``n = 399`` the stride
-    is 1 and again 200 come back, while ``n = 401`` gives a stride of 2 and 201 -> capped to
-    200. An axis already at or below ``num_target`` is returned whole.
+    ``num_target`` is an upper bound, not a promise. The stride is the smallest integer that
+    brings the axis within the bound -- ``ceil(n / num_target)`` -- so the result holds
+    ``ceil(n / stride)`` draws, which can be fewer than asked for: ``n = 300`` with
+    ``num_target = 200`` gives a stride of 2 and 150 draws, ``n = 399`` a stride of 2 and
+    200. Rounding the stride *down* instead would return 200 of the 300 -- but the first
+    200, since a stride of 1 keeps everything and the excess can then only be truncated
+    away, which is the failure the striding is here to prevent. An axis already at or below
+    ``num_target`` is returned whole.
 
     Parameters
     ----------
@@ -151,15 +154,14 @@ def thin(samples, num_target, *, axis=1):
         msg = f"num_target must be positive, got {num_target}."
         raise ValueError(msg)
 
-    stride = max(samples.shape[axis] // num_target, 1)
+    # Ceiling division, so the stride alone brings the axis within the bound and nothing has
+    # to be truncated off the end afterwards. `max(..., 1)` only covers an empty axis.
+    stride = max(-(-samples.shape[axis] // num_target), 1)
 
     index = [slice(None)] * samples.ndim
-
     index[axis] = slice(None, None, stride)
-    strided = samples[tuple(index)]
 
-    index[axis] = slice(None, num_target)
-    return strided[tuple(index)]
+    return samples[tuple(index)]
 
 
 def select_params(samples, stored_names, wanted_names, *, axis=-1):

@@ -164,6 +164,30 @@ def test_the_final_resample_trades_distinct_particles_for_equal_weights(result):
     assert jnp.all(result.num_unique < result.num_unique_smc)
 
 
+def test_the_returned_weights_belong_to_the_returned_particles(result):
+    """The resample spends the weights, so what comes back with it must be uniform.
+
+    Pairing post-resample particles with the pre-resample weights is silent: `eamax.io`
+    writes them side by side into `posterior` and `sample_stats/weight`, and a consumer
+    doing the natural thing for an SMC file -- weighting the stored draws -- would then
+    weight the cloud twice and report a posterior mean that is simply wrong.
+    """
+    assert jnp.allclose(result.weights, 1.0 / NUM_PARTICLES)
+
+    weighted = jnp.sum(result.weights[..., None] * result.particles, axis=1)
+
+    assert jnp.allclose(weighted, jnp.mean(result.particles, axis=1))
+
+
+def test_the_weight_ess_still_describes_the_cloud_before_the_resample(result):
+    """It is the counterpart of `num_unique_smc`, not a statistic of `weights`.
+
+    The ESS of the uniform weights that now come back is 1 by construction; the diagnostic
+    is only worth reporting for the uneven weights the resample consumed.
+    """
+    assert jnp.all(result.weight_ess < 1.0)
+
+
 def test_skipping_the_final_resample_leaves_the_particles_unequally_weighted():
     common = dict(
         num_integration_steps=20,
@@ -182,6 +206,8 @@ def test_skipping_the_final_resample_leaves_the_particles_unequally_weighted():
     assert not jnp.allclose(resampled.particles, raw.particles)
     # Untouched by the resample, the cloud keeps every distinct particle it had.
     assert jnp.all(raw.num_unique == raw.num_unique_smc)
+    # ... and its weights are still the uneven ones that go with it.
+    assert not jnp.allclose(raw.weights, 1.0 / raw.weights.shape[-1])
 
 
 # --------------------------------------------------------------------------- #

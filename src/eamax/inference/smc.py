@@ -40,7 +40,10 @@ class SMCResult(NamedTuple):
         ``resample_final`` was set.
     weights : array
         Shape ``(num_chains, num_particles)``. **Normalized linear-space** weights, not log
-        weights -- named for what BlackJAX actually returns.
+        weights -- named for what BlackJAX actually returns. They always belong to
+        ``particles``: when ``resample_final`` was set they are uniform, because the
+        resample has already spent them. Anything that reweights the stored cloud by these
+        is therefore a no-op rather than a double-weighting.
     log_marginal_likelihood : array
         Shape ``(num_chains,)``. The SMC estimate of ``log p(data | model)``.
     num_iterations : array
@@ -51,7 +54,10 @@ class SMCResult(NamedTuple):
     num_unique_smc : array
         Distinct particles before it, shape ``(num_chains,)``.
     weight_ess : array
-        Weight ESS as a fraction, shape ``(num_chains,)``.
+        Weight ESS as a fraction, shape ``(num_chains,)``, of the cloud *before* the final
+        resample -- the pre-resample counterpart of ``num_unique_smc``. It is deliberately
+        not the ESS of ``weights``: those are uniform once the cloud has been resampled, so
+        their ESS is 1 by construction and measures nothing.
     """
 
     particles: jnp.ndarray
@@ -94,7 +100,9 @@ def smc_inference_loop(key, smc_kernel, initial_state, max_steps=DEFAULT_MAX_STE
         step, state, _, _ = carry
         return (tempering_param(state) < 1) & (step < max_steps)
 
-    @jax.jit
+    # Not jitted: `lax.while_loop` stages the body out itself, so a decorator here only
+    # adds a nested `pjit` to the jaxpr and a jit cache entry keyed on a closure that is
+    # rebuilt on every call and so never reused.
     def one_step(carry):
         step, state, log_evidence, loop_key = carry
         loop_key, step_key = jax.random.split(loop_key, 2)
@@ -226,16 +234,24 @@ def tempered_smc(key, log_prior_fn, log_likelihood_fn, initial_particles, mcmc_p
         if resample_final:
             index = resampling_fn(resample_key, state.weights, num_particles)
             particles_out = state.particles[index]
+            # The resample has spent the weights: what comes out is an equally weighted
+            # cloud. Returning `state.weights` alongside it would pair post-resample
+            # particles with pre-resample weights, and a consumer doing the natural thing
+            # for an SMC file -- weighting the stored draws -- would weight the cloud twice.
+            weights_out = jnp.full_like(state.weights, 1.0 / num_particles)
         else:
             particles_out = state.particles
+            weights_out = state.weights
 
         return SMCResult(
             particles=particles_out,
-            weights=state.weights,
+            weights=weights_out,
             log_marginal_likelihood=log_evidence,
             num_iterations=num_iterations,
             num_unique=count_unique_particles(particles_out),
             num_unique_smc=num_unique_smc,
+            # Of `state.weights`, i.e. before any final resample: the diagnostic only says
+            # something while the weights are still uneven.
             weight_ess=weight_ess(state.weights),
         )
 

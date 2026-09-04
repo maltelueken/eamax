@@ -128,7 +128,11 @@ def window_adaptation(sampler_fun, logdensity_fn, init_positions, num_steps, key
     """
     inferred = _leading_axis(init_positions, num_chains)
 
-    kwargs.setdefault("adaptation_info_fn", get_filter_adapt_info_fn()())
+    # Not `setdefault`: its argument is evaluated whether or not it is used, so a caller
+    # that supplied its own `adaptation_info_fn` would still pay the BlackJAX accessor and
+    # then discard the result.
+    if "adaptation_info_fn" not in kwargs:
+        kwargs["adaptation_info_fn"] = get_filter_adapt_info_fn()()
     adapt = blackjax().window_adaptation(sampler_fun, logdensity_fn, **kwargs)
 
     def run_one(chain_key, position):

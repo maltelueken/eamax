@@ -190,7 +190,16 @@ class Parameterization:
     # -- links / change of variables ----------------------------------------------------- #
     @property
     def links(self):
-        """The coefficients' link names (``"log"``/``"identity"``), in vector order."""
+        """The coefficients' link names (``"log"``/``"identity"``), in vector order.
+
+        Raises
+        ------
+        ValueError
+            If any coefficient carries a bijector that is neither ``Exp`` nor ``Identity``.
+            Such a link works everywhere the bijector is used directly -- :meth:`constrain`,
+            :meth:`to_natural`, :meth:`log_det_jacobian` -- but has no name to report; see
+            :func:`eamax.design.links.link_name`.
+        """
         return tuple(link_name(c.bijector) for c in self.order)
 
     def constrain(self, theta):
@@ -200,8 +209,35 @@ class Parameterization:
         keeps its leading axes.
         """
         theta = jnp.asarray(theta)
+
+        # The common case is a mix of log and identity links, and there the whole map is one
+        # `where` over an exponential rather than P separate slices stacked back together.
+        # That matters because `back_transform_then_select` applies this to a full
+        # ``(chain, draw, dataset, param)`` posterior, where the per-coefficient form
+        # materializes P intermediates the size of the leading axes.
+        mask = self._exp_mask()
+        if mask is not None:
+            # The inner `where` is not redundant: `constrain` is on the gradient path (see
+            # `eamax.design.engine.accumulator_params`), and exponentiating an identity-linked
+            # coefficient large enough to overflow would give the discarded branch an `inf`
+            # whose masked-out cotangent is `0 * inf` -- a NaN gradient. Feeding `exp` a zero
+            # there keeps both the value and its derivative finite.
+            return jnp.where(mask, jnp.exp(jnp.where(mask, theta, 0.0)), theta)
+
         cols = [c.bijector.forward(theta[..., i]) for i, c in enumerate(self.order)]
         return jnp.stack(cols, axis=-1)
+
+    def _exp_mask(self):
+        """``(P,)`` boolean marking the log-linked coefficients, or ``None``.
+
+        ``None`` whenever any coefficient carries a link that is neither log nor identity,
+        which is the signal to fall back to applying each bijector on its own.
+        """
+        try:
+            links = self.links
+        except ValueError:
+            return None
+        return jnp.asarray([link == "log" for link in links])
 
     def to_natural(self, theta):
         """Alias for :meth:`constrain`, read as "report these on the natural scale"."""
@@ -230,7 +266,25 @@ class Parameterization:
 
         No quantities -- for callers that only need ``names`` and ``constrain`` /
         ``to_natural`` (posterior reporting and back-transforms), not the accumulator map.
+
+        Raises
+        ------
+        ValueError
+            If ``names`` and ``links`` differ in length. Zipping them would truncate to the
+            shorter and return a spec that is internally consistent but describes the wrong
+            vector: the length check downstream in
+            :func:`eamax.inference.posterior.select_params` passes, and the samples are
+            back-transformed on links belonging to other coefficients.
         """
+        names = tuple(names)
+        links = tuple(links)
+
+        if len(names) != len(links):
+            raise ValueError(
+                f"{len(names)} names but {len(links)} links: {list(names)} against "
+                f"{list(links)}. They are parallel sequences; one entry per coefficient."
+            )
+
         order = tuple(Free(name, bijector_for_link(link)) for name, link in zip(names, links))
         return cls(order=order, quantities=(), num_responses=1)
 

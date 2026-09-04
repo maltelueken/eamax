@@ -226,3 +226,128 @@ def test_pulsed_conflict_spec_routes_the_pulse_to_the_distractor_accumulator():
     amp = np.array(params["amp"])
     # amp == 0.3 exactly where the accumulator index equals the trial's distractor, else 0.
     assert np.allclose(amp, [[0.3, 0.0, 0.3], [0.0, 0.3, 0.0]])
+
+
+# --------------------------------------------------------------------------- #
+# Links: the string view of a bijector, and what it can round-trip
+# --------------------------------------------------------------------------- #
+def test_importing_eamax_does_not_import_tfp():
+    """`eamax._tfp` exists so that TFP is a peer, not a hard requirement of `import eamax`.
+
+    Run in a subprocess with `tensorflow_probability` blocked: `eamax.design` is on the
+    package's own import path, so a single module-level `tfb()` there -- the natural way to
+    cache the `Exp` class for a link-name lookup -- makes plain `import eamax` fail outright
+    for anyone who only wants the closed-form Wald and LBA densities, and costs everyone
+    else TFP's multi-second import.
+    """
+    import subprocess
+    import sys
+
+    script = """
+import sys
+
+class Block:
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] == "tensorflow_probability":
+            raise ImportError("blocked")
+        return None
+
+sys.meta_path.insert(0, Block())
+
+import eamax
+import eamax.design
+from eamax.accumulators import wald, lba
+
+assert not any(k.startswith("tensorflow_probability") for k in sys.modules)
+"""
+    assert subprocess.run([sys.executable, "-c", script]).returncode == 0
+
+
+def test_link_names_round_trip_through_of_names():
+    from eamax.design import Parameterization
+
+    spec = Parameterization.of_names(("v", "b", "shift"), ("log", "log", "identity"))
+
+    assert spec.links == ("log", "log", "identity")
+
+
+def test_a_bijector_with_no_link_name_raises_rather_than_reporting_identity():
+    """Reporting a `Softplus` as `"identity"` would rebuild it as `Identity()`.
+
+    `of_names(spec.names, spec.links)` is the documented way to reconstruct a reporting
+    spec for `load_dataset_posterior`, so a wrong name there back-transforms stored samples
+    on the wrong link -- finite, plausible, wrong numbers and no error.
+    """
+    from eamax._tfp import tfb
+    from eamax.design import coef, intercept, link_name, parameterization, quantity, term
+
+    with pytest.raises(ValueError, match="No link name"):
+        link_name(tfb().Softplus())
+
+    v = coef("v", tfb().Softplus())
+    spec = parameterization(
+        order=[v], quantities=[quantity("v", term(v, intercept()))], num_responses=2
+    )
+
+    with pytest.raises(ValueError, match="No link name"):
+        spec.links
+
+
+def test_a_bijector_with_no_link_name_still_constrains_through_its_own_forward():
+    """Only the *name* is unavailable; the bijector itself is used directly."""
+    from eamax._tfp import tfb
+    from eamax.design import coef, intercept, parameterization, quantity, term
+
+    v = coef("v", tfb().Softplus())
+    spec = parameterization(
+        order=[v], quantities=[quantity("v", term(v, intercept()))], num_responses=2
+    )
+    theta = jnp.asarray([0.3])
+
+    assert np.allclose(spec.constrain(theta), tfb().Softplus().forward(theta))
+
+
+def test_of_names_rejects_name_and_link_lists_of_different_lengths():
+    """Zipping would truncate to the shorter and return a self-consistent wrong spec.
+
+    Nothing downstream catches it: `select_params`' own length check compares against the
+    truncated `names`, so the samples are back-transformed and selected on the links of
+    other coefficients.
+    """
+    from eamax.design import Parameterization
+
+    with pytest.raises(ValueError, match="3 names but 2 links"):
+        Parameterization.of_names(("v", "b", "t0"), ("log", "log"))
+
+
+def test_constrain_matches_the_per_coefficient_forward_on_a_mixed_spec():
+    """The vectorized log/identity path must agree with applying each bijector in turn."""
+    from eamax.design import Parameterization
+
+    spec = Parameterization.of_names(("v", "b", "shift"), ("log", "log", "identity"))
+    theta = jnp.asarray([[0.3, -1.2, 2.0], [-0.5, 0.1, -3.0]])
+
+    expected = jnp.stack(
+        [c.bijector.forward(theta[..., i]) for i, c in enumerate(spec.order)], axis=-1
+    )
+
+    assert np.allclose(spec.constrain(theta), expected)
+
+
+def test_constrain_has_finite_gradients_for_a_large_identity_linked_value():
+    """The vectorized path exponentiates under a mask; the discarded branch must not be inf.
+
+    `constrain` is on the gradient path via `accumulator_params`, and a masked-out `inf`
+    gives `0 * inf` in the backward pass -- a NaN gradient from a value that is perfectly
+    ordinary on its own link.
+    """
+    import jax
+
+    from eamax.design import Parameterization
+
+    spec = Parameterization.of_names(("v", "shift"), ("log", "identity"))
+    grad = jax.grad(lambda theta: jnp.sum(spec.constrain(theta)))(
+        jnp.asarray([0.5, 800.0])
+    )
+
+    assert bool(jnp.all(jnp.isfinite(grad)))

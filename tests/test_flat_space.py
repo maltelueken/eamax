@@ -69,6 +69,37 @@ def test_raveling_round_trips(flat_space):
         assert jnp.allclose(flat_space.ravel(flat_space.unravel(flat)), flat)
 
 
+def test_raveling_a_dict_missing_a_component_is_an_error(flat_space):
+    """The layout is fixed at construction; `ravel` must hold the argument to it.
+
+    Re-deriving a layout from whatever it is handed accepts a short dict and returns a
+    short vector, which `unravel` then *misinterprets* -- reading each component out of the
+    wrong offsets -- rather than rejecting.
+    """
+    components = flat_space.unravel(flat_space.mode())
+    del components["z"]
+
+    with pytest.raises(ValueError, match="do not match this flat space's layout"):
+        flat_space.ravel(components)
+
+
+def test_raveling_a_dict_with_an_extra_component_is_an_error(flat_space):
+    components = dict(flat_space.unravel(flat_space.mode()), spurious=jnp.zeros(3))
+
+    with pytest.raises(ValueError, match="do not match this flat space's layout"):
+        flat_space.ravel(components)
+
+
+def test_the_centered_block_is_the_trailing_columns_of_the_subject_parameters(flat_space):
+    """What `init_particles_from_prior` reads instead of running the reconstruction."""
+    num_ncp = flat_space.prior.num_params_ncp
+
+    for flat in _draws(flat_space):
+        assert jnp.allclose(
+            flat_space.centered_block(flat), flat_space.subject_params(flat)[:, num_ncp:]
+        )
+
+
 def test_the_mode_is_the_priors_mode(prior, flat_space):
     expected = flat_space.ravel(flat_space.bijector.inverse(prior.mode()))
     assert jnp.allclose(flat_space.mode(), expected)
