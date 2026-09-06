@@ -1,13 +1,4 @@
-"""The accumulator interface: a first-passage-time distribution, and nothing else.
-
-An accumulator answers two questions about *decision time* -- how dense is it here, and
-how much probability is left beyond here -- plus how to draw from it. It knows nothing
-about non-decision time, about racing, about which accumulator won, or about how bad a
-trial has to be before it gets floored. All of that belongs to `eamax.race`.
-
-That split keeps the guards in one place. Accumulators return raw log-densities, and the
-race applies the floor and NaN containment once at the end, so there is no intermediate
-for a caller to re-clamp by mistake.
+"""The single accumulator interface for a first-passage-time distribution.
 
 Parameters travel as a dict keyed by `param_names` rather than as positional arguments,
 so a parameterization can be checked against an accumulator once, at construction, and so

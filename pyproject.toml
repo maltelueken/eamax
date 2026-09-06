@@ -20,12 +20,6 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 
-# Core is deliberately tiny. NOTE: tensorflow_probability is a *required runtime peer* for
-# the sampling paths and `eamax.hierarchical`, but is NOT declared here on purpose --
-# `tfp-nightly` and `tensorflow-probability` are separate PyPI distributions that both
-# install the `tensorflow_probability` module, and all three consumer repos are on
-# `tfp-nightly`. Declaring it would install both and they would fight over the import path.
-# See `eamax._tfp` for the lazy import and its error message.
 dependencies = ["jax>=0.9", "numpy"]
 
 [project.optional-dependencies]
@@ -33,20 +27,10 @@ dependencies = ["jax>=0.9", "numpy"]
 flows = ["distrax", "flax", "orbax-checkpoint", "optax"]
 # Convenience for fresh environments that do not already have tfp-nightly installed.
 tfp = ["tensorflow-probability"]
-# `eamax.inference` (NUTS + tempered SMC). Every API this uses -- `extend_params`,
-# `adaptive_tempered_smc`, `smc.resampling.systematic`, `SMCInfo.log_likelihood_increment`
-# -- is unchanged across 1.2.5 (the oldest pin among the consumer repos) and 1.6.2 (the
-# newest), so the floor is 1.2.5. The one exception is `blackjax.diagnostics.rhat`, which
-# arrived later; `eamax.inference.diagnostics.rhat` raises with an upgrade hint below ~1.6
-# rather than silently falling back to the older plain Gelman-Rubin statistic.
-# NOTE: `eamax.inference` also needs the TFP peer, via `eamax.hierarchical`.
+# `eamax.inference` (NUTS + tempered SMC).
 inference = ["blackjax>=1.2.5"]
 # `eamax.io` only -- reading and writing NetCDF posterior artifacts. Kept out of
-# `inference` because sampling and diagnostics need none of it: `arviz-stats` is
-# deliberately absent, since `eamax.inference.diagnostics.rhat` reproduces
-# `arviz_stats.rhat` to six decimals from blackjax alone. No blackjax either: the module
-# reads and writes and does not analyse, so nothing in it computes an R-hat -- a caller who
-# wants one composes `eamax.inference.diagnostics.rhat` itself, under the `inference` extra.
+# `inference` because sampling and diagnostics need none of it.
 io = ["arviz-base", "xarray", "h5netcdf", "h5py"]
 
 [dependency-groups]

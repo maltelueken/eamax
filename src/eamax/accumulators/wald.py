@@ -1,11 +1,8 @@
-"""The Wald (inverse Gaussian) accumulator: a constant-drift diffusion to a fixed bound.
+"""The Wald (inverse Gaussian) accumulator.
 
 A diffusion with drift `v` and within-trial noise `s` started at zero first reaches a
 boundary `b` at an inverse-Gaussian time with mean `mu = b / v` and shape
 `lam = (b / s)^2`. Racing several of these is the racing diffusion model.
-
-The two primitives here are validated against `scipy.stats.invgauss` and against the R
-package EMC2 (see `tests/test_emc2_reference.py`).
 """
 
 import jax.numpy as jnp

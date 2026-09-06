@@ -1,4 +1,4 @@
-"""The linear ballistic accumulator: a noiseless ramp from a random start point.
+"""The linear ballistic accumulator.
 
 Each accumulator draws a start point uniformly on `[0, A]` and a drift rate from a
 normal truncated to be positive, then travels deterministically to threshold `b`, so its

@@ -1,12 +1,10 @@
 # eamax
 
-Evidence accumulation models in JAX: simulation, likelihoods, and parameter estimation for
-the racing diffusion model and its relatives.
-
-One implementation of the maths — the race likelihood, the accumulator densities, the
-parameterization engine and the sampling layer — with the numerical guards in a single place.
+Evidence accumulation models in JAX: simulation, likelihoods, and parameter estimation.
 
 ## Install
+
+eamax has separate dependency groups for different modules:
 
 ```console
 uv add eamax                 # core: jax + numpy
@@ -24,20 +22,23 @@ Call `eamax.enable_x64()` from your entry point. Race log-densities are precisio
 and the reference tolerances assume float64. `eamax` never mutates JAX's global config on
 import.
 
-## The four seams
+## The four core modules
 
-```
-eamax.accumulators   first-passage distributions: Wald, LBA, pulsed variants.
-                     They see decision times and return raw log-densities.
-eamax.race           winner's density x losers' survival, for any N.
-                     Owns t0 and every numerical guard.
-eamax.design         parameterizations: flat parameter vector + trial design
-                     -> per-accumulator drift, threshold, noise.
-eamax.simulate       sampling, driven by the same parameterization.
-```
+Four core modules cover simulation and likelihoods of evidence accumulation models:
 
-Plus `eamax.flows` (neural density estimation) and `eamax.hierarchical` (multi-subject
-priors).
+- `eamax.accumulators`: First-passage distributions: Wald, LBA, pulsed variants; they receive decision times and return raw log-densities
+- `eamax.race`: Race likelihoods. Takes care of t0 and every numerical guard
+- `eamax.design`: Parameterizations and presets (e.g., intercept-slope)
+- `eamax.simulate`: Sampling, driven by parameterizations
+
+Additional modules are `eamax.flows` (neural density estimation) and `eamax.hierarchical` (hierarchical
+prior structures).
+
+Priors are defined outside the package (except for structure of hierarchical priors).
+
+## Example
+
+Create a log likelihood function for the two-accumulator racing diffusion model with intercept-slope parameterization:
 
 ```python
 import eamax
@@ -75,7 +76,7 @@ uv add 'eamax[inference]'
 adaptive tempered SMC, and convergence diagnostics.
 
 ```python
-from eamax.inference import fit_nuts_batch, tempered_smc, T0Support, min_valid_rt
+from eamax.inference import fit_nuts_batch, make_init_positions
 
 positions, infos = fit_nuts_batch(
     key, data, make_logdensity_fn, make_init_positions,
@@ -83,92 +84,7 @@ positions, infos = fit_nuts_batch(
 )
 ```
 
-Both factories are called *inside* the driver, per traced dataset, so starting values can be
-per-dataset **and** per-chain **and** support-aware at once. Everything is in unconstrained
-coordinates, so the forward transform appears exactly once.
-
-Two defaults are opinionated. They are defaults with no override: the cheaper alternatives
-are not exposed at all.
-
-**Chains are adapted independently.** `window_adaptation` runs one window adaptation per
-chain and *raises* on a position without a chain axis. Replicating one warmed state across
-chains leaves R-hat with nothing to measure: between-chain variance starts at zero, so the
-diagnostic cannot fail — it can report a clean R-hat even when every chain has settled into a
-single mode of a multimodal target.
-
-**Starting values are rejection-sampled into the support.** `t0` above the fastest observed
-response time puts a chain on the likelihood's flat floor, where the gradient carries no
-information and step-size adaptation cannot recover. Rejection rather than clipping, because a clip is a point mass — dispersion
-destroyed in the one coordinate the constraint exists to protect.
-
-`T0Support.from_spec` locates `t0` by name via `Parameterization` and raises if it is absent
-or not on the log link, rather than assuming it is the last entry.
-
-### The one supported path
-
-```python
-support = T0Support.from_spec(spec, min_valid_rt(rt))
-positions, num_exhausted = init_positions_from_prior(
-    prior.sample, num_chains, key, support=support,      # dispersed, and inside the support
-)
-last_states, tuning = window_adaptation(       # one adaptation per chain, all num_chains
-    blackjax.nuts, logdensity_fn, positions, num_steps=1000, key=warmup_key,
-)
-# ... then sample with `tuning` exactly as it came back
-```
-
-Draw dispersed per-chain starts from the prior — `init_positions_from_prior` for NUTS,
-`init_particles_from_prior` for SMC — adapt **every** chain, then sample with the tuning that
-comes back, unmodified. `fit_nuts` / `fit_nuts_batch` do exactly this internally.
-
-Three shortcuts off this path are deliberately **not offered**, because each spends a
-diagnostic that says whether a fit is usable:
-
-| Not offered | Why | Do this instead |
-|---|---|---|
-| sharing one warmed state across chains | Adapting one chain and replicating it makes R-hat unable to fail. | `init_positions_from_prior` + `window_adaptation` |
-| sharing one SMC cloud across chains | The chains would then differ only in SMC randomness, so between-chain spread understates the uncertainty — and that spread *is* the standard error on the log marginal likelihood. | `init_particles_from_prior`, one cloud per chain |
-| overwriting a collapsed step size | Replacing it with the healthy chains' median treats a symptom; the usual cause is a chain that started outside the `t0` support. | Start inside the support (`T0Support`); if a step size still collapses, report it |
-
-The warm-up saving these buy is real — per-chain adaptation costs `num_chains`× the warm-up
-work — but it is paid for out of the only numbers that say whether a fit is usable.
-
-`eamax.io` (extra `io`) reads and writes posterior artifacts in two schemas — batched
-per-dataset fits, and single hierarchical fits — over shared array helpers in
-`eamax.inference.posterior`.
-
-**`eamax.io` reads and writes, and does nothing else.** It computes no diagnostic, drops no
-fit on one, and does not thin. `load_dataset_posterior` returns every draw of every chain,
-back-transformed and selected by name, shaped `(chain, draw, dataset, param)`. A reader that
-filtered would return an array whose *shape* depended on a threshold, and pooling on the way
-out would destroy the axis R-hat is computed over — so the caller composes those steps
-itself, out of parts that need no xarray:
-
-```python
-theta = load_dataset_posterior(path, to_constrained=..., param_names=[...])
-is_converged = np.all(rhat(theta, chain_axis=0, sample_axis=1) < 1.01, axis=-1)
-samples = thin(pool_chains(theta)[is_converged], num_target_samples, axis=1)
-```
-
-Diagnose while the chain axis is still there, mask the pooled array, then thin.
-
-## Three design decisions worth knowing about
-
-**`t0` and the guards live in the race, not the accumulator.** The `t0` shift, the parameter
-floors and the density floor all belong to the race. Accumulators return raw log-densities,
-so there is no intermediate for a caller to re-clamp — which would floor each component
-separately and make the effective floor scale with the number of accumulators.
-
-**The likelihood floor applies once, to the trial total.** Flooring each density component
-separately makes the effective floor scale with the number of accumulators while inflating
-deep-tail survival terms once per loser — a bias that grows with N and with tail depth, and
-whose sign flatters models that push losers into the tail. Flooring the assembled total is
-N-independent, and matches EMC2, which floors each trial at the same `log(1e-10)`.
-
-**`eamax` stops at the likelihood boundary.** It owns the link function (inseparable from the
-parameterization) but no prior — priors are a modelling choice left to the caller.
-
-## One engine, every parameterization
+## Parameterizations
 
 A parameterization is a set of quantities, each a sum of terms, each term a coefficient times
 a **contrast** column built from the accumulator index and the trial covariates:
@@ -192,14 +108,13 @@ Each coefficient carries a TensorFlow Probability bijector as its link, so `cons
 The two-accumulator `[v_intercept, v_slope, s_true, b, t0]` layout and the signed
 average/difference terms over N accumulators are both just presets over this one engine
 (`rdm_intercept_slope_spec`, `rdm_sat_spec`, `lba_intercept_slope_spec`, `lba_sat_spec`,
-`effects_spec`), emitting stable parameter names — nothing downstream renames.
+`effects_spec`). Parameter names are set here and not supposed to be changed downstream.
 
 The two noise identifications are just two ways to build the `s` quantity: the "average"
 convention is `S·intercept + s_d·match(0.5)`; the "mismatch" convention (what `s_true` means)
-is `constant(scale)·nontarget() + s_true·target()`. Both are linear — there is no
-`noise_reference` flag. And because a quantity is an open-ended sum of contrasts, richer
-models — a conflict pulse routed to one accumulator via `distractor`, an arbitrary condition
-contrast matrix — are ordinary specs (`pulsed_conflict_spec`).
+is `constant(scale)·nontarget() + s_true·target()`. Because a quantity is an open-ended sum of contrasts, richer
+models, e.g., a conflict pulse routed to one accumulator via `distractor`, an arbitrary condition
+contrast matrix, can be defined through the same interface (`pulsed_conflict_spec`).
 
 ## Validation
 
@@ -216,14 +131,15 @@ numerical integral of its own density; and a score test — `mean grad_theta log
 
 On the inference side: tempered SMC recovers a conjugate Gaussian's closed-form posterior
 mean and covariance in D=2, and its log marginal likelihood lands within **0.0044 nats** of
-the analytic evidence `log N(x | 0, S0 + S)` — a check on the evidence, which is often the
-headline scientific output, against a known answer.
+the analytic evidence `log N(x | 0, S0 + S)`.
+
+Run unit and validation tests with:
 
 ```console
 uv run pytest
 ```
+## Generative AI usage
 
-## Migration
+Claude Code (Opus version 4.5 - 5.0) was used to partially generate and improve code in prfmodel.
+All improvements were manually evaluated and approved by the author.
 
-`docs/migration/` has a guide per source repository: what moves, what stays, what breaks, and
-which numbers change.
