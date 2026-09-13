@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "eamax"
-version = "0.1.0"
+version = "0.1.1"
 description = "Evidence accumulation models in JAX: simulation and likelihoods for racing diffusion and related models"
 readme = "README.md"
 license = { file = "LICENSE" }
