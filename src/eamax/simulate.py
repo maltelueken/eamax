@@ -79,6 +79,13 @@ def simulate_race(key, params_fn, theta, design, accumulator):
         Winning accumulator, shape ``(T,)``.
     """
     params, t0 = params_fn(theta, design)
+    # A `broadcasts_params` accumulator gets trial-invariant quantities as `(N, 1)`, but a
+    # draw is per trial, so the trial axis is materialized here.
+    num_trials = jnp.shape(design.rt)[-1]
+    params = {
+        name: jnp.broadcast_to(value, jnp.broadcast_shapes(jnp.shape(value), (1, num_trials)))
+        for name, value in params.items()
+    }
     return race_sample(key, accumulator, params, t0, design.first_response)
 
 

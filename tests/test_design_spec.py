@@ -351,3 +351,42 @@ def test_constrain_has_finite_gradients_for_a_large_identity_linked_value():
     )
 
     assert bool(jnp.all(jnp.isfinite(grad)))
+
+
+def test_a_scalar_covariate_is_the_same_as_a_constant_column():
+    # A scalar `target` says "the same on every trial"; broadcast parameters must not be able
+    # to tell it from the equivalent `(T,)` column.
+    theta = jnp.log(jnp.array([1.0, 1.5, 1.2, 1.3, 0.3]))
+    params_fn = build_params_fn(rdm_intercept_slope_spec(), Wald())
+    column, _ = params_fn(theta, _design())
+    scalar, _ = params_fn(theta, _design().replace(target=2))
+    for name in column:
+        assert scalar[name].shape == column[name].shape == (2, 6)
+        assert np.array_equal(np.array(scalar[name]), np.array(column[name]))
+
+
+def test_unbroadcast_quantities_are_trial_invariant_only_by_shape():
+    # `broadcast=False` keeps a length-1 trial axis only where nothing a quantity reads
+    # varies by trial. A per-trial covariate must still produce `(N, T)`, or an accumulator
+    # that trusts the shape would score every trial with the first trial's parameters.
+    from eamax.design import accumulator_params
+
+    spec = rdm_sat_spec()
+    theta = jnp.log(jnp.array([1.0, 1.5, 1.2, 1.3, 0.4, 0.3]))
+    design = _design(n=4, condition=[1.0, 0.0, 1.0, 0.0]).replace(target=2)
+
+    unbroadcast, _ = accumulator_params(spec, theta, design, broadcast=False)
+    broadcast, _ = accumulator_params(spec, theta, design)
+
+    assert unbroadcast["v"].shape == unbroadcast["s"].shape == (2, 1)
+    assert unbroadcast["b"].shape == (2, 4)  # reads `condition`, which varies by trial
+    for name in broadcast:
+        assert broadcast[name].shape == (2, 4)
+        assert np.array_equal(
+            np.array(jnp.broadcast_to(unbroadcast[name], (2, 4))), np.array(broadcast[name])
+        )
+
+    per_trial_target, _ = accumulator_params(
+        spec, theta, design.replace(target=jnp.array([2, 1, 2, 1])), broadcast=False
+    )
+    assert per_trial_target["v"].shape == (2, 4)

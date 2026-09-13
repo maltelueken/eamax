@@ -176,7 +176,23 @@ class FlowAccumulator:
     remat : bool, optional
         Wrap the forward pass in ``jax.checkpoint``, trading recomputation for activation
         memory. Worth it inside a hierarchical likelihood over many subjects.
+
+    Notes
+    -----
+    The conditioner is an MLP evaluated once per context row, and its activations are what
+    a gradient keeps -- per particle and per subject inside a hierarchical sampler. So the
+    accumulator sets ``broadcasts_params``: :func:`eamax.design.build_params_fn` then hands
+    it trial-invariant quantities as ``(N, 1)`` rather than ``(N, T)``, the MLP runs ``N``
+    times instead of ``N * T``, and the spline broadcasts over the ``(T,)`` decision times.
+
+    A quantity is trial-invariant when the design makes it so: a covariate that is the same
+    on every trial -- ``target`` in an accuracy-coded dataset, say -- should be passed to
+    :class:`~eamax.design.TrialDesign` as a scalar. As a ``(T,)`` column of equal values it
+    still produces ``(N, T)`` parameters, and the MLP still runs per trial.
     """
+
+    #: Read by :func:`eamax.design.build_params_fn`; see Notes.
+    broadcasts_params = True
 
     def __init__(self, conditioner, context_names, transform=None, dtype=jnp.float32, remat=False):
         self.conditioner = conditioner
@@ -204,14 +220,15 @@ class FlowAccumulator:
         Returns
         -------
         array
-            Shape ``(T, num_in)``.
+            The parameters' broadcast shape plus a trailing ``num_in`` axis -- ``(N, T,
+            num_in)``, or ``(N, 1, num_in)`` when every parameter is trial-invariant.
         """
         columns = []
         for name in self.context_names:
             value = jnp.asarray(params[name])
             transform = self.transform.get(name)
             columns.append(transform(value) if transform else value)
-        return jnp.stack(columns, axis=-1).astype(self.dtype)
+        return jnp.stack(jnp.broadcast_arrays(*columns), axis=-1).astype(self.dtype)
 
     def log_pdf_sf(self, t, params):
         t = jnp.asarray(t)
@@ -219,10 +236,9 @@ class FlowAccumulator:
         return log_pdf.astype(t.dtype), log_sf.astype(t.dtype)
 
     def sample(self, key, params):
+        context = self.build_context(params)
         _, flow = spline_flow(
-            jnp.ones(jnp.shape(next(iter(params.values()))), dtype=self.dtype),
-            self.build_context(params),
-            self.conditioner,
+            jnp.ones(jnp.shape(context)[:-1], dtype=self.dtype), context, self.conditioner
         )
         return flow.sample(seed=key)
 

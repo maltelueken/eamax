@@ -202,3 +202,10 @@ def test_race_is_vmappable_over_subjects():
     out = jax.vmap(one)(rt, response, t0, v)
     assert out.shape == (n_subj, n_trial)
     assert np.all(np.isfinite(np.array(out)))
+
+
+def test_gather_accepts_a_trial_invariant_parameter():
+    # A `broadcasts_params` accumulator hands a hybrid race `(N, 1)` parameters.
+    mask = jnp.array([[True, False, True], [False, True, False]])
+    (gathered,) = gather_by_mask(mask, jnp.array([[1.0], [2.0]]))
+    assert np.array_equal(np.array(gathered), [1.0, 2.0, 1.0])

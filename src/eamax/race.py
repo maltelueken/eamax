@@ -96,7 +96,8 @@ def gather_by_mask(mask, *arrays):
     mask : array
         Boolean, shape ``(N, T)``, with exactly one ``True`` per column.
     *arrays : array
-        Arrays of shape ``(N, T)`` to collapse.
+        Arrays broadcastable to ``(N, T)`` -- an ``(N, 1)`` trial-invariant parameter
+        included -- to collapse.
 
     Returns
     -------

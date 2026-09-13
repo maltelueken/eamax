@@ -4,7 +4,10 @@ A registered pytree, so a whole design can be passed through `jax.vmap` and `jax
 without unpacking it field by field at every call site.
 
 Every field is optional except the ones a given model actually reads, and all of them are
-per-trial arrays of the same length -- there is no design *matrix* here. Covariates are
+per-trial arrays of the same length -- there is no design *matrix* here. The exception is a
+covariate that does not vary: ``target``, ``condition`` and ``distractor`` may be scalars,
+which marks the quantities built from them as trial-invariant (see
+:func:`eamax.design.accumulator_params`). Covariates are
 routed rather than regressed on: accumulator identity picks a sign, congruency picks between
 two parameters, the distractor picks which accumulator carries a pulse.
 """
@@ -25,7 +28,11 @@ class TrialDesign:
     target : array, optional
         The correct response per trial, shape ``(T,)``. Accumulator ``k`` is "matching" on
         trials where ``target == k``, which is the sign that splits every average into a
-        match and a mismatch value.
+        match and a mismatch value. A scalar means the same target on every trial -- an
+        accuracy-coded dataset -- and is what lets a
+        :class:`~eamax.flows.FlowAccumulator` evaluate its conditioner once per accumulator
+        rather than once per trial. A ``(T,)`` column of equal values is scored identically
+        but gives up that saving.
     condition : array, optional
         ``1`` for the reference level (congruent, or speed-instructed), ``0`` otherwise.
         Defaults to all-reference, which makes every condition effect inert.

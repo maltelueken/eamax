@@ -148,3 +148,59 @@ def test_loading_with_a_reordered_context_is_refused(tmp_path):
 
     with pytest.raises(ValueError, match="silently wrong densities"):
         load_conditioner(_conditioner(num_mid=16, num_bins=4), str(path), context_names=("b", "v", "s"))
+
+
+def _flow_race(accumulator, spec, theta, design):
+    from eamax.design import build_params_fn
+
+    params, t0 = build_params_fn(spec, accumulator)(theta, design)
+    loglik = race_loglik(
+        design.rt, design.response, t0, lambda t: accumulator.log_pdf_sf(t, params),
+        first_response=spec.first_response,
+    )
+    return jnp.sum(loglik), params
+
+
+def test_a_trial_invariant_flow_runs_its_conditioner_once_per_accumulator():
+    # The memory regression this guards: with `(N, T)` parameters the MLP ran on every trial,
+    # and inside a 1000-particle hierarchical SMC cloud its activations did not fit on a GPU.
+    # A scalar target has to reach the conditioner as `(N, 1, num_in)` and still produce the
+    # same log-likelihood and gradient as the per-trial path.
+    from eamax.design import TrialDesign, rdm_intercept_slope_spec
+
+    spec = rdm_intercept_slope_spec()
+    accumulator = FlowAccumulator(_conditioner(), CONTEXT, dtype=jnp.float64)
+    rng = np.random.default_rng(0)
+    rt = jnp.array(rng.uniform(0.5, 2.0, 40))
+    response = jnp.array(rng.integers(1, 3, 40))
+    per_trial = TrialDesign(rt=rt, response=response, target=jnp.full((40,), 2))
+    invariant = per_trial.replace(target=2)
+    theta = jnp.log(jnp.array([1.0, 1.5, 1.2, 1.3, 0.2]))
+
+    _, params = _flow_race(accumulator, spec, theta, invariant)
+    assert accumulator.build_context(params).shape == (2, 1, 3)
+    _, params = _flow_race(accumulator, spec, theta, per_trial)
+    assert accumulator.build_context(params).shape == (2, 40, 3)
+
+    def value_and_grad(design):
+        return jax.value_and_grad(lambda th: _flow_race(accumulator, spec, th, design)[0])(theta)
+
+    value, grad = value_and_grad(invariant)
+    expected_value, expected_grad = value_and_grad(per_trial)
+    assert np.isfinite(float(value))
+    assert float(value) == pytest.approx(float(expected_value), rel=1e-12)
+    assert np.allclose(np.array(grad), np.array(expected_grad), rtol=1e-10, atol=1e-12)
+
+
+def test_a_trial_invariant_flow_still_simulates_one_draw_per_trial():
+    from eamax.design import TrialDesign, build_params_fn, rdm_intercept_slope_spec
+    from eamax.simulate import simulate_race
+
+    spec = rdm_intercept_slope_spec()
+    accumulator = FlowAccumulator(_conditioner(), CONTEXT)
+    design = TrialDesign(rt=jnp.zeros(25), target=2)
+    rt, response = simulate_race(
+        jax.random.key(0), build_params_fn(spec, accumulator),
+        jnp.log(jnp.array([1.0, 1.5, 1.2, 1.3, 0.2])), design, accumulator,
+    )
+    assert rt.shape == response.shape == (25,)

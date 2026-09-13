@@ -23,12 +23,23 @@ the parameter vector is traced.
 Each contrast receives ``accum``, the ``(N, 1)`` integer column of accumulator indices
 (``design.first_response + arange(num_responses)``), and the ``design`` itself, and returns
 something broadcastable to ``(N, T)``.
+
+A covariate given as a scalar rather than a ``(T,)`` column is constant across trials, and
+the contrasts reading it keep a trial axis of length 1 rather than ``T``. That is how a
+design says a quantity is trial-invariant, which an accumulator that pays per evaluated
+parameter set -- :class:`eamax.flows.FlowAccumulator` -- turns into one evaluation per
+accumulator instead of one per trial. See :func:`eamax.design.accumulator_params`.
 """
 
 from dataclasses import dataclass
 from typing import Callable
 
 import jax.numpy as jnp
+
+
+def _trial_row(covariate):
+    """A covariate as a ``(1, T)`` row, or ``(1, 1)`` when it is a scalar constant."""
+    return jnp.reshape(jnp.asarray(covariate), (1, -1))
 
 
 @dataclass(frozen=True)
@@ -79,7 +90,7 @@ def match(scale=1.0):
     """
 
     def fn(accum, design):
-        return scale * jnp.where(accum == jnp.asarray(design.target)[None, :], 1.0, -1.0)
+        return scale * jnp.where(accum == _trial_row(design.target), 1.0, -1.0)
 
     return Contrast(fn, f"match({scale})")
 
@@ -93,7 +104,7 @@ def target(scale=1.0):
     """
 
     def fn(accum, design):
-        return scale * jnp.where(accum == jnp.asarray(design.target)[None, :], 1.0, 0.0)
+        return scale * jnp.where(accum == _trial_row(design.target), 1.0, 0.0)
 
     return Contrast(fn, f"target({scale})")
 
@@ -102,7 +113,7 @@ def nontarget(scale=1.0):
     """Indicator column: ``scale`` on every non-target accumulator, ``0`` on the target."""
 
     def fn(accum, design):
-        return scale * jnp.where(accum != jnp.asarray(design.target)[None, :], 1.0, 0.0)
+        return scale * jnp.where(accum != _trial_row(design.target), 1.0, 0.0)
 
     return Contrast(fn, f"nontarget({scale})")
 
@@ -116,7 +127,7 @@ def distractor(scale=1.0):
     """
 
     def fn(accum, design):
-        return scale * jnp.where(accum == jnp.asarray(design.distractor)[None, :], 1.0, 0.0)
+        return scale * jnp.where(accum == _trial_row(design.distractor), 1.0, 0.0)
 
     return Contrast(fn, f"distractor({scale})")
 
@@ -130,7 +141,7 @@ def condition(level, scale=1.0):
     """
 
     def fn(accum, design):
-        return scale * jnp.where(jnp.asarray(design.condition)[None, :] == level, 1.0, 0.0)
+        return scale * jnp.where(_trial_row(design.condition) == level, 1.0, 0.0)
 
     return Contrast(fn, f"condition({level},{scale})")
 
@@ -147,7 +158,7 @@ def contrast_column(weights_by_level):
     weights = jnp.asarray(weights_by_level)
 
     def fn(accum, design):
-        return weights[jnp.asarray(design.condition).astype(int)][None, :]
+        return _trial_row(weights[jnp.asarray(design.condition).astype(int)])
 
     return Contrast(fn, f"contrast_column({list(weights_by_level)})")
 

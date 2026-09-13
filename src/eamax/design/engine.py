@@ -35,14 +35,35 @@ def _assemble_quantity(quantity, spec, p, accum, design):
     return total
 
 
-def accumulator_params(spec, theta, design):
+def _param_shape(shape, num_responses, num_trials, broadcast):
+    """``(N, T)``, or ``(N, 1)`` for a trial-invariant quantity that need not be expanded."""
+    shape = jnp.broadcast_shapes(shape, (num_responses, 1))
+    return shape if not broadcast else jnp.broadcast_shapes(shape, (num_responses, num_trials))
+
+
+def accumulator_params(spec, theta, design, broadcast=True):
     """Per-accumulator drift, noise and threshold (and any extra quantities), each `(N, T)`.
+
+    Parameters
+    ----------
+    spec : Parameterization
+    theta : array
+        Unconstrained parameter vector.
+    design : TrialDesign
+    broadcast : bool, optional
+        Expand every quantity to ``(N, T)``. With ``False`` a quantity keeps a trial axis of
+        length 1 when nothing it reads varies by trial -- only constant terms, or covariates
+        the design gives as scalars -- and is ``(N, T)`` otherwise. That leaves a quantity
+        trial-invariant *by shape*, so an accumulator whose cost scales with the number of
+        parameter sets it evaluates can do the work once per accumulator. The values are the
+        same either way; only the shape differs.
 
     Returns
     -------
     params : dict of array
-        Keyed by quantity name, each ``(N, T)``. A quantity with a ``transform`` is emitted as
-        that function of the other quantities -- e.g. the LBA threshold ``A + b`` from a
+        Keyed by quantity name, each ``(N, T)`` -- or ``(N, 1)`` where trial-invariant, when
+        ``broadcast`` is ``False``. A quantity with a ``transform`` is emitted as that
+        function of the other quantities -- e.g. the LBA threshold ``A + b`` from a
         ``b``-gap.
     t0 : array
         Non-decision time, scalar per trial (or a broadcastable shape). Zero if the spec has
@@ -52,7 +73,6 @@ def accumulator_params(spec, theta, design):
     n = spec.num_responses
     num_trials = jnp.shape(design.rt)[-1]
     accum = (spec.first_response + jnp.arange(n))[:, None]  # (N, 1)
-    ref = jnp.ones((n, num_trials))
 
     # Assemble every quantity's raw sum first, so a `transform` can read the others' values.
     built = {q.name: _assemble_quantity(q, spec, p, accum, design) for q in spec.quantities}
@@ -61,7 +81,11 @@ def accumulator_params(spec, theta, design):
         for q in spec.quantities
     }
 
-    params = {name: value * ref for name, value in final.items() if name != "t0"}
+    params = {
+        name: jnp.broadcast_to(value, _param_shape(jnp.shape(value), n, num_trials, broadcast))
+        for name, value in final.items()
+        if name != "t0"
+    }
     t0 = final["t0"] if "t0" in final else jnp.asarray(0.0)
     return params, t0
 
@@ -75,6 +99,12 @@ def build_params_fn(spec, accumulator):
 
     The spec's coverage of the accumulator is checked once, here, so a missing or misspelled
     quantity surfaces at setup rather than as a `KeyError` inside a traced function.
+
+    An accumulator with a true ``broadcasts_params`` attribute -- one whose ``log_pdf_sf``
+    broadcasts ``(N, 1)`` parameters against ``(T,)`` decision times itself -- receives
+    trial-invariant quantities unexpanded; see ``broadcast`` in :func:`accumulator_params`.
+    Every other accumulator receives ``(N, T)``. :func:`eamax.simulate.simulate_race` and
+    :func:`eamax.race.gather_by_mask` expand such parameters where they need the trial axis.
     """
     produced = {q.name for q in spec.quantities if q.name != "t0"}
     missing = [name for name in accumulator.param_names if name not in produced]
@@ -84,8 +114,10 @@ def build_params_fn(spec, accumulator):
             f"spec produces {sorted(produced)}; missing {missing}."
         )
 
+    broadcast = not getattr(accumulator, "broadcasts_params", False)
+
     def params_fn(theta, design):
-        params, t0 = accumulator_params(spec, theta, design)
+        params, t0 = accumulator_params(spec, theta, design, broadcast=broadcast)
         return {name: params[name] for name in accumulator.param_names}, t0
 
     return params_fn
