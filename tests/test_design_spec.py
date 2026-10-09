@@ -200,6 +200,50 @@ def test_the_two_conventions_pin_a_different_noise():
     assert np.allclose(np.array(effects["s"])[:, 0], [0.9, 1.1])
 
 
+def test_an_S_effect_frees_only_the_non_reference_noise():
+    spec = effects_spec("S", fixed_noise=1.5)
+    assert "S_inc" in spec.names
+    assert "S_con" not in spec.names and "S" not in spec.names
+    assert spec.num_params == effects_spec("").num_params + 1  # one parameter, like V or B
+
+    theta = jnp.zeros((spec.num_params,)).at[spec.index("S_inc")].set(jnp.log(0.7))
+    theta = theta.at[spec.index("s_d")].set(0.2)
+    params = build_params_fn(spec, Wald())(theta, _design(n=2, condition=[1.0, 0.0]))[0]
+    s = np.array(params["s"])
+    assert s[:, 0].mean() == pytest.approx(1.5)  # congruent: the fixed reference
+    assert s[:, 1].mean() == pytest.approx(0.7)  # incongruent: estimated
+    assert s[1, 0] - s[0, 0] == pytest.approx(0.2)  # s_d still splits the pair
+
+
+def test_an_S_effect_leaves_the_scale_identified():
+    """Rescaling every drift, threshold and noise coefficient must change the likelihood.
+
+    Wald first-passage times depend only on ``b / v`` and ``(b / s)^2``, so if every noise
+    coefficient were free, multiplying all of them by a constant would leave the likelihood
+    unchanged and the model would have a flat ridge.
+    """
+    spec = effects_spec("VBS")
+    design = _design(n=4, target=[1, 2, 1, 2], condition=[1.0, 1.0, 0.0, 0.0])
+    theta = jnp.zeros((spec.num_params,))
+    for name, value in [("V_con", 2.0), ("V_inc", 1.8), ("B_con", 1.2), ("B_inc", 1.4), ("S_inc", 0.9)]:
+        theta = theta.at[spec.index(name)].set(jnp.log(value))
+    theta = theta.at[spec.index("v_d")].set(1.0).at[spec.index("t0")].set(jnp.log(0.3))
+
+    scale = 1.7
+    links = np.array(spec.links)
+    scaled_names = [n for n in spec.names if n != "t0"]
+    rescaled = theta
+    for name in scaled_names:
+        i = spec.index(name)
+        rescaled = rescaled.at[i].set(theta[i] + jnp.log(scale) if links[i] == "log" else theta[i] * scale)
+
+    def wald_shape(t):
+        params = build_params_fn(spec, Wald())(t, design)[0]
+        return np.array(params["b"] / params["v"]), np.array((params["b"] / params["s"]) ** 2)
+
+    assert not np.allclose(wald_shape(theta)[1], wald_shape(rescaled)[1])
+
+
 def test_a_spec_missing_a_quantity_the_accumulator_needs_fails_at_bind_time():
     # Not at trace time, and not as a silently wrong density.
     with pytest.raises(KeyError, match="missing"):

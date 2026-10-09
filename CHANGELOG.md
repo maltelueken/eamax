@@ -9,6 +9,19 @@ heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- `eamax.flows.FlowAccumulator.sample` (and `sample` on any flow returned by
+  `eamax.flows.spline_flow`) drew a single base value for the whole batch, so every draw
+  sharing a context was the same number. The flow's base distribution now carries the
+  context's batch shape, giving one independent draw per context row. Densities and survival
+  functions are unchanged.
+- `eamax.design.effects_spec` with an `"S"` effect freed both `S_con` and `S_inc`, which
+  leaves the model's scale unidentified: rescaling every drift, threshold and noise
+  coefficient together leaves the likelihood unchanged. Only `S_inc` is now free, and the
+  reference (congruent) average noise stays at `fixed_noise`. Specs with an `"S"` effect
+  therefore have one parameter fewer, and no `S_con`.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added
