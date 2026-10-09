@@ -9,6 +9,8 @@ heading.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 ### Added
 
 - `eamax.flows`: optional per-context affine stage on log decision time
@@ -83,6 +85,7 @@ heading.
   neural spline-flow density estimation (`eamax.flows`), NUTS and tempered SMC inference
   (`eamax.inference`), and NetCDF I/O (`eamax.io`).
 
-[Unreleased]: https://github.com/maltelueken/eamax/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/maltelueken/eamax/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/maltelueken/eamax/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/maltelueken/eamax/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/maltelueken/eamax/releases/tag/v0.1.0
