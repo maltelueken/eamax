@@ -34,10 +34,47 @@ inference = ["blackjax>=1.2.5"]
 io = ["arviz-base", "xarray", "h5netcdf", "h5py"]
 
 [dependency-groups]
-dev = ["pytest", "scipy", "pandas", "blackjax>=1.6", "arviz-base", "arviz-stats", "xarray", "h5netcdf", "h5py"]
+dev = [
+    "pytest",
+    "scipy",
+    "pandas",
+    "blackjax>=1.6",
+    "arviz-base",
+    "arviz-stats",
+    "xarray",
+    "h5netcdf",
+    "h5py",
+    "bump-my-version>=1.5.1",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/eamax"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.bumpversion]
+current_version = "0.1.1"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release v{new_version}"
+message = "Bump version: {current_version} → {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "src/eamax/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "## [Unreleased]"
+replace = """## [Unreleased]
+
+## [{new_version}] - {now:%Y-%m-%d}"""
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "[Unreleased]: https://github.com/maltelueken/eamax/compare/v{current_version}...HEAD"
+replace = """[Unreleased]: https://github.com/maltelueken/eamax/compare/v{new_version}...HEAD
+[{new_version}]: https://github.com/maltelueken/eamax/compare/v{current_version}...v{new_version}"""

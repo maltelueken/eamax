@@ -19,6 +19,7 @@ bias at no extra cost, since the flow's survival is exact given the flow.
 """
 
 import jax.numpy as jnp
+import optax
 from flax import nnx
 from jax.scipy import stats
 
@@ -67,12 +68,40 @@ def train_step(conditioner, optimizer, metrics, data, context, t_max=None):
 
     `metrics` accumulates but is never reset here -- the caller owns the averaging window
     and must call `metrics.reset()` after each `compute()` for a windowed mean.
+
+    `metrics` is passed ``loss`` and ``grad_norm``, the *raw* global gradient norm -- before
+    any clipping the optimiser applies -- so a log can show how often a clip threshold
+    engages. Metrics that do not read ``grad_norm`` ignore it; :class:`Maximum` over it
+    catches the single spike an average over a long window hides.
     """
     loss, grads = nnx.value_and_grad(loss_fn)(conditioner, data, context, t_max)
-    metrics.update(loss=loss)
+    metrics.update(loss=loss, grad_norm=optax.global_norm(grads))
     optimizer.update(conditioner, grads)
 
 
 def eval_step(conditioner, metrics, data, context, t_max=None):
     """Score a batch without updating the conditioner."""
     metrics.update(loss=loss_fn(conditioner, data, context, t_max))
+
+
+class Maximum(nnx.metrics.Metric):
+    """Running maximum of one keyword argument, for `nnx.MultiMetric`.
+
+    `nnx.metrics.Average` hides a single spike inside a long logging window; the maximum does
+    not, and a spike is exactly what gradient clipping is meant to catch.
+    """
+
+    def __init__(self, argname: str = "values"):
+        self.argname = argname
+        self.value = nnx.metrics.MetricState(jnp.array(-jnp.inf, dtype=jnp.float32))
+
+    def reset(self) -> None:
+        self.value[...] = jnp.array(-jnp.inf, dtype=jnp.float32)
+
+    def update(self, **kwargs) -> None:
+        if self.argname not in kwargs:
+            raise TypeError(f"Expected keyword argument '{self.argname}'")
+        self.value[...] = jnp.maximum(self.value[...], jnp.max(jnp.asarray(kwargs[self.argname])))
+
+    def compute(self):
+        return self.value[...]

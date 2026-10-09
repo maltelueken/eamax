@@ -31,8 +31,10 @@ Four core modules cover simulation and likelihoods of evidence accumulation mode
 - `eamax.design`: Parameterizations and presets (e.g., intercept-slope)
 - `eamax.simulate`: Sampling, driven by parameterizations
 
-Additional modules are `eamax.flows` (neural density estimation) and `eamax.hierarchical` (hierarchical
-prior structures).
+Additional modules are `eamax.flows` and `eamax.hierarchical`:
+
+- `eamax.flows`: Neural density estimation. Optional flow features are a per-context affine stage on log decision time, log-scaled inputs, a deeper conditioner, and clamping inputs to the training box. The checkpoint sidecar records and checks all of these.
+- `eamax.hierarchical`: Hierarchical prior structures.
 
 Priors are defined outside the package (except for structure of hierarchical priors).
 
