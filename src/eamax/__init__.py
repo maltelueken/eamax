@@ -34,7 +34,7 @@ from .race import (
     winner_mask,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "MIN_P",
