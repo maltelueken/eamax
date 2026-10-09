@@ -382,7 +382,8 @@ def spline_flow(data, context, conditioner):
         Log density of ``data`` under the flow.
     flow : distrax.Transformed
         Returned so callers can reach the bijector for the survival function; ``log_prob``
-        is often discarded and eliminated by jit.
+        is often discarded and eliminated by jit. Its batch shape is the context's, so
+        ``flow.sample`` draws one independent decision time per context row.
     """
     params = _conditioner_outputs(conditioner, context)
     num_bins, affine = _layout_from_width(params.shape[-1])
@@ -392,7 +393,14 @@ def spline_flow(data, context, conditioner):
         bijector = distrax.Chain([_exponential(), distrax.ScalarAffine(shift=loc, scale=scale), spline])
     else:
         bijector = distrax.Chain([_exponential(), _spline(params)])
-    flow = distrax.Transformed(distrax.Normal(loc=0.0, scale=1.0), bijector)
+    # The base carries the batch shape the context implies. A scalar base would make
+    # `flow.sample` draw a single `z` and push it through every context in the batch, so
+    # every draw sharing a context would be the same number.
+    batch_shape = params.shape[:-1]
+    base = distrax.Normal(
+        loc=jnp.zeros(batch_shape, dtype=params.dtype), scale=jnp.ones(batch_shape, dtype=params.dtype)
+    )
+    flow = distrax.Transformed(base, bijector)
     return flow.log_prob(data), flow
 
 

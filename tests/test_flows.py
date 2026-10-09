@@ -222,6 +222,42 @@ def test_a_trial_invariant_flow_still_simulates_one_draw_per_trial():
     assert rt.shape == response.shape == (25,)
 
 
+@pytest.mark.parametrize("affine", [False, True])
+def test_draws_are_independent_and_follow_the_flow_density(affine):
+    """Probability integral transform: the flow's own survival at its draws is uniform.
+
+    Every row shares one context, which is exactly the case a scalar base distribution got
+    wrong: one base draw pushed through every row made all the draws the same number.
+    """
+    from scipy import stats
+
+    conditioner = make_mlp_conditioner(nnx.Rngs(0), num_in=3, num_mid=16, num_bins=4, affine=affine)
+    accumulator = FlowAccumulator(conditioner, CONTEXT)
+    params = _params(4000)
+    draws = accumulator.sample(jax.random.key(0), params)
+
+    assert draws.shape == (4000,)
+    assert np.unique(np.asarray(draws)).size > 0.99 * draws.size  # float32 allows the odd tie
+    _, log_sf = accumulator.log_pdf_sf(draws, params)
+    assert stats.kstest(np.exp(np.asarray(log_sf, dtype=float)), "uniform").pvalue > 1e-3
+
+
+def test_the_batched_base_leaves_the_density_unchanged():
+    """The base's batch shape only changes sampling; scoring broadcasts exactly as before."""
+    import distrax
+
+    conditioner = _conditioner()
+    contexts = jnp.array([[[2.0, 1.0, 1.0]], [[1.0, 1.5, 0.8]]])  # (N, 1, num_in)
+    for context, data in [
+        (contexts[0, 0], jnp.linspace(0.05, 3.0, 7)),  # one context for all data
+        (contexts, jnp.linspace(0.05, 3.0, 7)),  # (N, 1, num_in) against (T,)
+        (contexts[:, 0], jnp.array([0.3, 0.9])),  # one context per observation
+    ]:
+        log_prob, flow = spline_flow(data, context, conditioner)
+        scalar_base = distrax.Transformed(distrax.Normal(0.0, 1.0), flow.bijector)
+        np.testing.assert_allclose(log_prob, scalar_base.log_prob(data), rtol=1e-6)
+
+
 # --------------------------------------------------------------------------------------- #
 # Affine stage, spline settings, log inputs, depth
 # --------------------------------------------------------------------------------------- #
