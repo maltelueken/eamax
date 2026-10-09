@@ -194,8 +194,11 @@ def effects_spec(effects, num_responses=2, *, fixed_noise=1.0):
     :mod:`eamax.design.effects`).
 
     The within-trial noise uses the "average" identification: the average noise is fixed to
-    ``fixed_noise`` unless ``"S"`` is among the effects, and the target-match difference
-    ``s_d`` is free. Averages take the log link; differences (``v_d``, ``b_d``, ``s_d``) and
+    ``fixed_noise`` and the target-match difference ``s_d`` is free. An ``"S"`` effect frees
+    only the non-reference (incongruent) average, ``S_inc``; the reference (congruent)
+    average stays at ``fixed_noise``. Freeing both would leave the model's scale
+    unidentified: multiplying every drift, threshold and noise coefficient by the same
+    constant leaves each Wald first-passage distribution, and so the likelihood, unchanged. Averages take the log link; differences (``v_d``, ``b_d``, ``s_d``) and
     the per-accumulator offsets take the identity link, because the whole point of estimating
     a difference is to learn its sign.
 
@@ -211,7 +214,8 @@ def effects_spec(effects, num_responses=2, *, fixed_noise=1.0):
     num_responses : int, optional
         Number of accumulators.
     fixed_noise : float, optional
-        The average noise, held fixed when ``"S"`` is not among the effects.
+        The average noise, held fixed -- on reference-condition trials only when ``"S"`` is
+        among the effects.
 
     Returns
     -------
@@ -247,7 +251,8 @@ def effects_spec(effects, num_responses=2, *, fixed_noise=1.0):
         b_terms.append(term(make(f"c_{r}", "c"), response_offset(r, num_responses)))
     s_terms = effect_terms("s_d", match(0.5))
     if "S" in effects:
-        s_terms += effect_terms("S", intercept())
+        # The reference level stays the fixed scale; only the other level is estimated.
+        s_terms += [term(constant(fixed_noise), condition(1)), term(make("S_inc", "S"), condition(0))]
     else:
         s_terms.append(term(constant(fixed_noise), intercept()))
     b_terms += effect_terms("B", intercept())
