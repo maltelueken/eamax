@@ -11,6 +11,7 @@ from .checkpoint import (
     write_metadata,
 )
 from .model import (
+    DEFAULT_MIN_BIN_SIZE,
     MIN_SCALE,
     MLP,
     DeepMLP,
@@ -24,11 +25,13 @@ from .model import (
     num_hidden_layers,
     spline_flow,
     spline_knots,
+    spline_min_bin_size,
     spline_settings,
 )
 from .train import Maximum, eval_step, loss_fn, train_step
 
 __all__ = [
+    "DEFAULT_MIN_BIN_SIZE",
     "MIN_SCALE",
     "MLP",
     "DeepMLP",
@@ -49,6 +52,7 @@ __all__ = [
     "save_conditioner",
     "spline_flow",
     "spline_knots",
+    "spline_min_bin_size",
     "spline_settings",
     "train_step",
     "write_metadata",

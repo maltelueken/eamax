@@ -62,10 +62,15 @@ step-size adaptation and freeze an SMC cloud. Clipped, a stray particle sees the
 the box edge -- bounded, continuous, with zero gradient along the clipped direction, so the
 prior alone pulls it back. Inside the box the likelihood is bit-identical.
 
-The spline settings, input scaling, depth and box are plain attributes on the conditioner --
-part of its graph, not its weights -- so the checkpoint sidecar records them and
-:func:`eamax.flows.load_conditioner` checks them: the same weights under a different setting
-are a different density.
+**Bin-size floor.** No spline bin can be narrower or shorter than ``min_bin_size``. Bins
+that see little training data -- the outermost ones, in the base distribution's tails -- can
+otherwise shrink until the transform bends sharply inside them, which shows up as curvature
+spikes in the log density. A higher floor bounds that bending.
+
+The spline settings, bin-size floor, input scaling, depth and box are plain attributes on the
+conditioner -- part of its graph, not its weights -- so the checkpoint sidecar records them
+and :func:`eamax.flows.load_conditioner` checks them: the same weights under a different
+setting are a different density.
 """
 
 import math
@@ -85,6 +90,12 @@ RANGE_MAX = 5.0
 
 DEFAULT_BOUNDARY_SLOPES = "identity"
 _BOUNDARY_SLOPES = ("identity", "unconstrained", "lower_identity", "upper_identity")
+
+#: Floor on every spline bin's width and height, in the spline's own coordinates, as
+#: `distrax` takes it. A higher floor bounds how sharply the transform can bend within one
+#: bin. Part of what a trained checkpoint means: every conditioner trained before it became a
+#: setting used this value.
+DEFAULT_MIN_BIN_SIZE = 1e-4
 
 #: Floor on the affine stage's per-context scale, so it can never collapse to a point mass.
 MIN_SCALE = 1e-3
@@ -144,7 +155,7 @@ def _validate_bounds(bounds, num_in):
 def make_mlp_conditioner(
     rngs, num_in, num_mid=64, num_bins=4, *, affine=False, spline_range=RANGE_MAX,
     boundary_slopes=DEFAULT_BOUNDARY_SLOPES, input_scaling=None, num_hidden=1,
-    context_bounds=None,
+    context_bounds=None, min_bin_size=DEFAULT_MIN_BIN_SIZE,
 ):
     """Build the conditioner MLP for a `num_bins`-knot spline.
 
@@ -178,6 +189,9 @@ def make_mlp_conditioner(
     context_bounds : sequence of (float, float), optional
         The box the conditioner is trained on, one ``(low, high)`` per input in context
         order. Recorded, not enforced here: :class:`FlowAccumulator` clips to it.
+    min_bin_size : float, optional
+        Floor on every bin's width and height (see :data:`DEFAULT_MIN_BIN_SIZE`). The
+        ``num_bins`` floors must fit in the spline's width, ``2 * spline_range``.
 
     Returns
     -------
@@ -186,12 +200,20 @@ def make_mlp_conditioner(
     spline_range = float(spline_range)
     boundary_slopes = str(boundary_slopes)
     num_hidden = int(num_hidden)
+    min_bin_size = float(min_bin_size)
     if num_hidden < 1:
         raise ValueError(f"num_hidden must be at least 1, got {num_hidden}.")
     if boundary_slopes not in _BOUNDARY_SLOPES:
         raise ValueError(f"boundary_slopes must be one of {_BOUNDARY_SLOPES}, got {boundary_slopes!r}.")
     if not spline_range > 0.0:
         raise ValueError(f"spline_range must be positive, got {spline_range}.")
+    if not min_bin_size > 0.0:
+        raise ValueError(f"min_bin_size must be positive, got {min_bin_size}.")
+    if not num_bins * min_bin_size < 2.0 * spline_range:
+        raise ValueError(
+            f"{num_bins} bins of at least min_bin_size={min_bin_size} do not fit in the spline's "
+            f"width 2 * spline_range = {2.0 * spline_range}."
+        )
     if not affine:
         if (spline_range, boundary_slopes) != (RANGE_MAX, DEFAULT_BOUNDARY_SLOPES):
             raise ValueError(
@@ -211,6 +233,7 @@ def make_mlp_conditioner(
     if affine:
         conditioner.spline_range = spline_range
         conditioner.boundary_slopes = boundary_slopes
+    conditioner.min_bin_size = min_bin_size
     if input_scaling is not None:
         columns = {key: tuple(float(x) for x in input_scaling[key]) for key in ("eps", "loc", "scale")}
         if any(len(column) != num_in for column in columns.values()):
@@ -236,6 +259,11 @@ def spline_settings(conditioner):
         float(getattr(conditioner, "spline_range", RANGE_MAX)),
         str(getattr(conditioner, "boundary_slopes", DEFAULT_BOUNDARY_SLOPES)),
     )
+
+
+def spline_min_bin_size(conditioner):
+    """A conditioner's floor on its spline's bin sizes; the default for one without it."""
+    return float(getattr(conditioner, "min_bin_size", DEFAULT_MIN_BIN_SIZE))
 
 
 def input_scaling(conditioner):
@@ -338,13 +366,16 @@ def _conditioner_outputs(conditioner, context):
     return conditioner((jnp.log(context + eps) - loc) / scale)
 
 
-def _spline(spline_params, spline_range=RANGE_MAX, boundary_slopes=DEFAULT_BOUNDARY_SLOPES):
+def _spline(
+    spline_params, spline_range=RANGE_MAX, boundary_slopes=DEFAULT_BOUNDARY_SLOPES,
+    min_bin_size=DEFAULT_MIN_BIN_SIZE,
+):
     return distrax.RationalQuadraticSpline(
         spline_params,
         range_min=-spline_range,
         range_max=spline_range,
         boundary_slopes=boundary_slopes,
-        min_bin_size=1e-4,
+        min_bin_size=min_bin_size,
     )
 
 
@@ -389,10 +420,14 @@ def spline_flow(data, context, conditioner):
     num_bins, affine = _layout_from_width(params.shape[-1])
     if affine:
         loc, scale = _loc_scale(params)
-        spline = _spline(params[..., : 3 * num_bins + 1], *spline_settings(conditioner))
+        spline = _spline(
+            params[..., : 3 * num_bins + 1], *spline_settings(conditioner),
+            min_bin_size=spline_min_bin_size(conditioner),
+        )
         bijector = distrax.Chain([_exponential(), distrax.ScalarAffine(shift=loc, scale=scale), spline])
     else:
-        bijector = distrax.Chain([_exponential(), _spline(params)])
+        spline = _spline(params, min_bin_size=spline_min_bin_size(conditioner))
+        bijector = distrax.Chain([_exponential(), spline])
     # The base carries the batch shape the context implies. A scalar base would make
     # `flow.sample` draw a single `z` and push it through every context in the batch, so
     # every draw sharing a context would be the same number.
@@ -425,7 +460,10 @@ def spline_knots(conditioner, context):
     """
     params = _conditioner_outputs(conditioner, jnp.asarray(context))
     num_bins, affine = _layout_from_width(params.shape[-1])
-    spline = _spline(params[..., : 3 * num_bins + 1], *spline_settings(conditioner))
+    spline = _spline(
+        params[..., : 3 * num_bins + 1], *spline_settings(conditioner),
+        min_bin_size=spline_min_bin_size(conditioner),
+    )
     log_t = spline.y_pos
     if affine:
         loc, scale = _loc_scale(params)
