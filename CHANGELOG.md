@@ -9,6 +9,17 @@ heading.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
+### Added
+
+- `eamax.flows`: the spline's floor on bin widths and heights is now a setting,
+  `make_mlp_conditioner(..., min_bin_size=...)`, instead of a fixed `1e-4`. A higher floor
+  bounds how sharply the transform can bend in sparsely trained bins. The checkpoint sidecar
+  records it and `load_conditioner` checks it; sidecars without it load with the old value,
+  `DEFAULT_MIN_BIN_SIZE`, so existing checkpoints are unchanged. New helper
+  `spline_min_bin_size`.
+
 ## [0.2.1] - 2026-10-09
 
 ### Fixed
@@ -100,7 +111,8 @@ heading.
   neural spline-flow density estimation (`eamax.flows`), NUTS and tempered SMC inference
   (`eamax.inference`), and NetCDF I/O (`eamax.io`).
 
-[Unreleased]: https://github.com/maltelueken/eamax/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/maltelueken/eamax/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/maltelueken/eamax/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/maltelueken/eamax/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/maltelueken/eamax/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/maltelueken/eamax/compare/v0.1.0...v0.1.1

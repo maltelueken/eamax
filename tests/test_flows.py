@@ -1,5 +1,7 @@
 """The neural density estimator, and the checkpoint metadata that keeps it honest."""
 
+import json
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -14,6 +16,7 @@ from flax import nnx  # noqa: E402
 from eamax import race_loglik  # noqa: E402
 from eamax.accumulators import Wald  # noqa: E402
 from eamax.flows import (  # noqa: E402
+    DEFAULT_MIN_BIN_SIZE,
     MIN_SCALE,
     MLP,
     DeepMLP,
@@ -32,11 +35,13 @@ from eamax.flows import (  # noqa: E402
     save_conditioner,
     spline_flow,
     spline_knots,
+    spline_min_bin_size,
     spline_settings,
     train_step,
     write_metadata,
 )
 from eamax.flows import model as flow_model  # noqa: E402
+from eamax.flows.checkpoint import SIDECAR_NAME  # noqa: E402
 
 CONTEXT = ("v", "s", "b")
 
@@ -494,6 +499,71 @@ def test_spline_settings_round_trip_and_mismatches_are_refused(tmp_path):
     wrong = make_mlp_conditioner(nnx.Rngs(4), num_in=3, num_mid=16, num_bins=NUM_BINS, affine=True)
     with pytest.raises(ValueError, match="spline_range, boundary_slopes"):
         load_conditioner(wrong, str(path), context_names=CONTEXT)
+
+
+def _floored(min_bin_size=None, affine=True, seed=0):
+    kwargs = {} if min_bin_size is None else {"min_bin_size": min_bin_size}
+    return make_mlp_conditioner(
+        nnx.Rngs(seed), num_in=3, num_mid=16, num_bins=NUM_BINS, affine=affine, **kwargs
+    )
+
+
+def test_min_bin_size_is_validated():
+    with pytest.raises(ValueError, match="min_bin_size must be positive"):
+        _floored(0.0)
+    # Four bins of 2.5 fill the default spline's width of 10 exactly, leaving nothing to learn.
+    with pytest.raises(ValueError, match="do not fit"):
+        _floored(2.5)
+    assert spline_min_bin_size(_floored()) == DEFAULT_MIN_BIN_SIZE == 1e-4
+
+
+@pytest.mark.parametrize("affine", [False, True])
+def test_min_bin_size_floors_the_bins_and_changes_the_density(affine):
+    default, floored = _floored(affine=affine), _floored(1.0, affine=affine)
+    nnx.update(floored, nnx.state(default))
+    # A width logit far below the others collapses the first bin onto the floor.
+    for conditioner in (default, floored):
+        conditioner.linear2.bias[...] = conditioner.linear2.bias[...].at[0].set(-20.0)
+    context = jnp.array([2.0, 1.0, 1.0])
+
+    assert np.diff(np.asarray(spline_knots(default, context)[0])).min() < 1e-2
+    assert np.diff(np.asarray(spline_knots(floored, context)[0])).min() >= 1.0 - 1e-6
+    assert not np.allclose(
+        np.asarray(evaluate_pdf_sf(default, TIMES, BATCH_CONTEXT)[0]),
+        np.asarray(evaluate_pdf_sf(floored, TIMES, BATCH_CONTEXT)[0]),
+    )
+
+
+def test_min_bin_size_round_trips_and_mismatches_are_refused(tmp_path):
+    floored = _floored(0.5)
+    path = tmp_path / "conditioner"
+    save_conditioner(floored, str(path), context_names=CONTEXT)
+    assert read_metadata(str(path))["min_bin_size"] == 0.5
+
+    restored = load_conditioner(_floored(0.5, seed=4), str(path), context_names=CONTEXT)
+    assert spline_min_bin_size(restored) == 0.5
+    np.testing.assert_allclose(
+        np.asarray(evaluate_pdf_sf(floored, TIMES, BATCH_CONTEXT)[0]),
+        np.asarray(evaluate_pdf_sf(restored, TIMES, BATCH_CONTEXT)[0]),
+        rtol=1e-6,
+    )
+    with pytest.raises(ValueError, match="min_bin_size=0.5"):
+        load_conditioner(_floored(seed=4), str(path), context_names=CONTEXT)
+
+
+def test_a_sidecar_without_min_bin_size_loads_with_the_default(tmp_path):
+    # Every checkpoint written before the floor was a setting.
+    path = tmp_path / "conditioner"
+    save_conditioner(_floored(), str(path), context_names=CONTEXT)
+    sidecar = path / SIDECAR_NAME
+    metadata = json.loads(sidecar.read_text())
+    del metadata["min_bin_size"]
+    sidecar.write_text(json.dumps(metadata))
+
+    restored = load_conditioner(_floored(seed=4), str(path), context_names=CONTEXT)
+    assert spline_min_bin_size(restored) == DEFAULT_MIN_BIN_SIZE
+    with pytest.raises(ValueError, match="min_bin_size=0.0001"):
+        load_conditioner(_floored(0.5, seed=4), str(path), context_names=CONTEXT)
 
 
 PULSED_NAMES = ("v", "amp", "tau", "s", "b")

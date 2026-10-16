@@ -31,11 +31,13 @@ from flax import nnx
 
 from .model import (
     DEFAULT_BOUNDARY_SLOPES,
+    DEFAULT_MIN_BIN_SIZE,
     RANGE_MAX,
     conditioner_layout,
     context_bounds,
     input_scaling,
     num_hidden_layers,
+    spline_min_bin_size,
     spline_settings,
 )
 
@@ -57,7 +59,8 @@ def architecture_metadata(conditioner):
         "affine": conditioner_layout(conditioner)[1],
         "spline_range": spline_range,
         "boundary_slopes": boundary_slopes,
-        "input_scaling": None if scaling is None else {k: list(v) for k, v in scaling.items()},
+        "min_bin_size": spline_min_bin_size(conditioner),
+        "input_scaling":None if scaling is None else {k: list(v) for k, v in scaling.items()},
         "num_hidden": num_hidden_layers(conditioner),
         "context_bounds": None if bounds is None else [list(pair) for pair in bounds],
     }
@@ -226,6 +229,14 @@ def _check_architecture(conditioner, metadata, path):
             f"Checkpoint at {path} was trained with (spline_range, boundary_slopes) = "
             f"{recorded_settings}, but the conditioner it is being loaded into has "
             f"{spline_settings(conditioner)}."
+        )
+    # A sidecar written before the floor was a setting records none: those flows used the
+    # default.
+    recorded_min_bin_size = float(metadata.get("min_bin_size", DEFAULT_MIN_BIN_SIZE))
+    if recorded_min_bin_size != spline_min_bin_size(conditioner):
+        raise ValueError(
+            f"Checkpoint at {path} was trained with min_bin_size={recorded_min_bin_size}, but "
+            f"the conditioner it is being loaded into has {spline_min_bin_size(conditioner)}."
         )
     recorded_scaling = metadata.get("input_scaling")
     if not _same_scaling(recorded_scaling, input_scaling(conditioner)):
